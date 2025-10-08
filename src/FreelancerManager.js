@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  PlusCircle, User, DollarSign, Calendar, FileText, CheckCircle, XCircle, 
-  BarChart3, Eye, Edit, Trash2, TrendingUp, Wallet, MessageCircle, 
+import {
+  PlusCircle, User, DollarSign, Calendar, FileText, CheckCircle, XCircle,
+  BarChart3, Eye, Edit, Trash2, TrendingUp, Wallet, MessageCircle,
   Send, Users, Search, MoreVertical, Phone, Video, Info, Smile,
-  Image, Camera, Mic, ThumbsUp, Globe, Heart, Share, MessageSquare
+  Image, Camera, Mic, ThumbsUp, Globe, Heart, Share, MessageSquare, Home
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import bcrypt from 'bcryptjs';
@@ -17,7 +17,7 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 console.log("Supabase Config:", { supabaseUrl, supabaseAnonKey });
 
-const NetworkPanel = ({ 
+const NetworkPanel = ({
   currentUser,
   users,
   selectedUser,
@@ -34,9 +34,66 @@ const NetworkPanel = ({
   loadMessages,
   sendMessage,
   setShowNetwork,
-  setGlobalPosts
+  setGlobalPosts,
+  addGlobalPost,
+  loadUsers,
+  loadGlobalPosts
 }) => {
-  const messagesEndRef = useRef(null);    
+  const messagesEndRef = useRef(null);
+  const [lastRefresh, setLastRefresh] = useState(Date.now());
+
+  useEffect(() => {
+    console.log('🚀 NetworkPanel mounted, forcing initial refresh...');
+
+    const initialRefresh = async () => {
+      try {
+        if (loadUsers) {
+          console.log('🔄 Initial users refresh...');
+          await loadUsers();
+        }
+        if (loadGlobalPosts) {
+          console.log('🔄 Initial posts refresh...');
+          await loadGlobalPosts();
+        }
+      } catch (error) {
+        console.error('Error in initial refresh:', error);
+      }
+    };
+
+    initialRefresh();
+  }, [loadUsers, loadGlobalPosts]);
+
+  // Auto refresh setiap 30 detik
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing network data...');
+      setLastRefresh(Date.now());
+      // Trigger parent to refresh data
+      loadUsers();
+      loadGlobalPosts();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Refresh data ketika component mount atau ketika kembali ke network panel
+  useEffect(() => {
+    console.log('🔃 Refreshing network panel data...');
+
+    const refreshData = async () => {
+      try {
+        if (loadUsers) await loadUsers();
+        if (loadGlobalPosts) await loadGlobalPosts();
+        if (selectedUser && loadMessages) {
+          await loadMessages(selectedUser.id);
+        }
+      } catch (error) {
+        console.error('Error refreshing network data:', error);
+      }
+    };
+
+    refreshData();
+  }, [lastRefresh, selectedUser, loadUsers, loadGlobalPosts, loadMessages]);
 
   useEffect(() => {
     scrollToBottom();
@@ -46,31 +103,11 @@ const NetworkPanel = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const addGlobalPost = () => {
-    if (!newPost.trim()) return;
-
-    const post = {
-      id: Date.now(),
-      user: { 
-        name: currentUser.username, 
-        avatar: currentUser.username.charAt(0).toUpperCase() 
-      },
-      content: newPost,
-      timestamp: "Baru saja",
-      likes: 0,
-      comments: 0,
-      shares: 0
-    };
-
-    setGlobalPosts(prev => [post, ...prev]);
-    setNewPost('');
-  };
-
   // Filter users berdasarkan search
   const filteredUsers = users.filter(user =>
     user.username.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  
+
   const handleUserSelect = async (user) => {
     setSelectedUser(user);
     await loadMessages(user.id);
@@ -108,14 +145,6 @@ const NetworkPanel = ({
           <div className="navigation-section mb-8">
             <h4 className="section-header text-gray-500 text-sm font-medium mb-4">Menu</h4>
             <div className="nav-items space-y-2">
-              <button className="nav-item w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors">
-                <Video className="nav-icon w-5 h-5" />
-                <span className="text-sm">Video Siaran Langsung</span>
-              </button>
-              <button className="nav-item w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors">
-                <Image className="nav-icon w-5 h-5" />
-                <span className="text-sm">Foto/Video</span>
-              </button>
               <button className="nav-item active w-full flex items-center space-x-3 p-3 rounded-lg bg-blue-50 text-blue-600 transition-colors">
                 <MessageCircle className="nav-icon w-5 h-5" />
                 <span className="text-sm">Perasaan/Aktivitas</span>
@@ -123,38 +152,7 @@ const NetworkPanel = ({
             </div>
           </div>
 
-          <div className="freelancer-section">
-            <h4 className="section-header text-gray-500 text-sm font-medium mb-4">Freelancers</h4>
-            <div className="freelancer-list space-y-4">
-              <div className="freelancer-item flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-                <div className="freelancer-avatar w-10 h-10 bg-gradient-to-r from-red-400 to-red-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                  AF
-                </div>
-                <div className="freelancer-info">
-                  <h5 className="freelancer-name font-medium text-gray-900 text-sm">Ahmad Freelancer</h5>
-                  <div className="freelancer-stats text-gray-500 text-xs">15 suka • 3 komentar</div>
-                </div>
-              </div>
-              <div className="freelancer-item flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-                <div className="freelancer-avatar w-10 h-10 bg-gradient-to-r from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                  SD
-                </div>
-                <div className="freelancer-info">
-                  <h5 className="freelancer-name font-medium text-gray-900 text-sm">Siti Developer</h5>
-                  <div className="freelancer-stats text-gray-500 text-xs">8 suka • 7 komentar</div>
-                </div>
-              </div>
-              <div className="freelancer-item flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-                <div className="freelancer-avatar w-10 h-10 bg-gradient-to-r from-green-400 to-green-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                  BD
-                </div>
-                <div className="freelancer-info">
-                  <h5 className="freelancer-name font-medium text-gray-900 text-sm">Budi Designer</h5>
-                  <div className="freelancer-stats text-gray-500 text-xs">25 suka • 5 komentar</div>
-                </div>
-              </div>
-            </div>
-          </div>
+
         </div>
       </div>
 
@@ -181,23 +179,6 @@ const NetworkPanel = ({
                   onKeyPress={handleAddPost}
                   className="post-input flex-1 border border-gray-300 rounded-full px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
-              </div>
-              <div className="create-post-actions flex justify-between border-t border-gray-100 pt-4">
-                <button className="action-button video flex items-center space-x-2 text-gray-600 hover:text-blue-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  <Video className="action-icon w-5 h-5" />
-                  <span className="text-sm">Video Siaran Langsung</span>
-                </button>
-                <button className="action-button photo flex items-center space-x-2 text-gray-600 hover:text-blue-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  <Image className="action-icon w-5 h-5" />
-                  <span className="text-sm">Foto/Video</span>
-                </button>
-                <button 
-                  onClick={addGlobalPost}
-                  className="action-button feeling flex items-center space-x-2 text-gray-600 hover:text-blue-600 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <Smile className="action-icon w-5 h-5" />
-                  <span className="text-sm">Perasaan/Aktivitas</span>
-                </button>
               </div>
             </div>
 
@@ -261,19 +242,24 @@ const NetworkPanel = ({
               <h3 className="chat-title font-semibold text-gray-900 text-lg">Obrolan</h3>
               <div className="online-indicator flex items-center space-x-2 mt-1">
                 <div className="online-dot w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="online-count text-gray-500 text-sm">{onlineUsers.size} online</span>
+                <span className="online-count text-gray-500 text-sm">
+                  {Array.from(onlineUsers).length} user online
+                </span>
+              </div>
+              <div className="total-users text-xs text-gray-400 mt-1">
+                Total: {users.length + 1} users terdaftar
               </div>
             </div>
-            
+
             <div className="chat-actions flex space-x-1">
               <button className="chat-action-btn p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
                 <Video className="chat-action-icon w-5 h-5" />
               </button>
-              <button 
+              <button
                 onClick={() => setShowNetwork(false)}
                 className="chat-action-btn p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                ✕
+                <Home className="chat-action-icon w-5 h-5" />
               </button>
             </div>
           </div>
@@ -284,7 +270,7 @@ const NetworkPanel = ({
             <Search className="search-icon absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="Cari percakapan"
+              placeholder="    Cari percakapan"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="search-input w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
@@ -297,9 +283,8 @@ const NetworkPanel = ({
             <div
               key={user.id}
               onClick={() => handleUserSelect(user)}
-              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${
-                selectedUser?.id === user.id ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
-              }`}
+              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${selectedUser?.id === user.id ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
+                }`}
             >
               <div className="contact-info flex items-center space-x-3">
                 <div className="contact-avatar-container relative">
@@ -337,7 +322,7 @@ const NetworkPanel = ({
                     </p>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setSelectedUser(null)}
                   className="close-chat text-gray-400 hover:text-gray-600 transition-colors"
                 >
@@ -350,18 +335,16 @@ const NetworkPanel = ({
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`message-bubble max-w-xs lg:max-w-md ${
-                    message.sender_id === currentUser.id 
-                      ? 'ml-auto bg-blue-500 text-white rounded-br-none' 
-                      : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
-                  } rounded-2xl px-4 py-3 transition-colors`}
+                  className={`message-bubble max-w-xs lg:max-w-md ${message.sender_id === currentUser.id
+                    ? 'ml-auto bg-blue-500 text-white rounded-br-none'
+                    : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
+                    } rounded-2xl px-4 py-3 transition-colors`}
                 >
                   <div className="message-content text-sm">
                     {message.content}
                   </div>
-                  <div className={`message-time text-xs mt-2 ${
-                    message.sender_id === currentUser.id ? 'text-blue-200' : 'text-gray-500'
-                  }`}>
+                  <div className={`message-time text-xs mt-2 ${message.sender_id === currentUser.id ? 'text-blue-200' : 'text-gray-500'
+                    }`}>
                     {new Date(message.created_at).toLocaleTimeString('id-ID', {
                       hour: '2-digit',
                       minute: '2-digit'
@@ -385,11 +368,10 @@ const NetworkPanel = ({
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim()}
-                  className={`send-button p-3 rounded-lg transition-colors ${
-                    newMessage.trim() 
-                      ? 'bg-blue-500 text-white hover:bg-blue-600' 
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  }`}
+                  className={`send-button p-3 rounded-lg transition-colors ${newMessage.trim()
+                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
                 >
                   <Send className="send-icon w-5 h-5" />
                 </button>
@@ -465,14 +447,329 @@ const FreelancerManager = () => {
     }
   ];
 
+  // Tambahkan fungsi untuk menyimpan post ke database
+  const addGlobalPost = async () => {
+    if (!newPost.trim() || !currentUser) return;
+
+    try {
+      const postData = {
+        user_id: currentUser.id,
+        content: newPost.trim(),
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('global_posts')
+        .insert([postData])
+        .select(`
+        *,
+        user:users(username)
+      `)
+        .single();
+
+      if (error) throw error;
+
+      // Format post untuk ditampilkan
+      const formattedPost = {
+        id: data.id,
+        user: {
+          name: data.user.username,
+          avatar: data.user.username.charAt(0).toUpperCase()
+        },
+        content: data.content,
+        timestamp: "Baru saja",
+        likes: data.likes,
+        comments: data.comments,
+        shares: data.shares,
+        created_at: data.created_at
+      };
+
+      setGlobalPosts(prev => [formattedPost, ...prev]);
+      setNewPost('');
+
+    } catch (err) {
+      console.error('Error adding post:', err);
+      alert('Gagal memposting: ' + err.message);
+    }
+  };
+
+  // Fungsi untuk load global posts dari database
+  const loadGlobalPosts = async () => {
+    if (!currentUser) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('global_posts')
+        .select(`
+        *,
+        user:users(username)
+      `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formattedPosts = data.map(post => ({
+        id: post.id,
+        user: {
+          name: post.user.username,
+          avatar: post.user.username.charAt(0).toUpperCase()
+        },
+        content: post.content,
+        timestamp: formatTimeAgo(post.created_at),
+        likes: post.likes,
+        comments: post.comments,
+        shares: post.shares,
+        created_at: post.created_at
+      }));
+
+      setGlobalPosts(formattedPosts);
+    } catch (err) {
+      console.error('Error loading posts:', err);
+    }
+  };
+
+  // Helper function untuk format waktu
+  const formatTimeAgo = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+
+    if (diffInSeconds < 60) return 'Baru saja';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} menit yang lalu`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} jam yang lalu`;
+    return `${Math.floor(diffInSeconds / 86400)} hari yang lalu`;
+  };
+
+  // GANTI fungsi setupRealtimePosts dengan yang ini:
+  const setupRealtimePosts = () => {
+    if (!currentUser) return;
+
+    console.log('📝 Setting up real-time posts');
+
+    const subscription = supabase
+      .channel('public:global_posts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'global_posts',
+        },
+        async (payload) => {
+          console.log('🆕 New post received via real-time:', payload);
+
+          // Skip jika post dari user sendiri (karena sudah ditambahkan via addGlobalPost)
+          if (payload.new.user_id === currentUser.id) {
+            console.log('⏭️ Skipping own post');
+            return;
+          }
+
+          try {
+            // Load user data untuk post baru
+            const { data: userData } = await supabase
+              .from('users')
+              .select('username')
+              .eq('id', payload.new.user_id)
+              .single();
+
+            if (userData) {
+              const newPost = {
+                id: payload.new.id,
+                user: {
+                  name: userData.username,
+                  avatar: userData.username.charAt(0).toUpperCase()
+                },
+                content: payload.new.content,
+                timestamp: formatTimeAgo(payload.new.created_at),
+                likes: payload.new.likes,
+                comments: payload.new.comments,
+                shares: payload.new.shares,
+                created_at: payload.new.created_at
+              };
+
+              console.log('➕ Adding new post to global posts:', newPost);
+
+              // Tambahkan post baru di awal array
+              setGlobalPosts(prev => {
+                // Cek duplikat
+                const exists = prev.some(post => post.id === newPost.id);
+                if (!exists) {
+                  return [newPost, ...prev];
+                }
+                return prev;
+              });
+            }
+          } catch (err) {
+            console.error('❌ Error processing new post:', err);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'global_posts',
+        },
+        (payload) => {
+          console.log('✏️ Post updated:', payload);
+          // Update post jika ada perubahan (likes, comments, dll)
+          setGlobalPosts(prev =>
+            prev.map(post =>
+              post.id === payload.new.id
+                ? {
+                  ...post,
+                  likes: payload.new.likes,
+                  comments: payload.new.comments,
+                  shares: payload.new.shares
+                }
+                : post
+            )
+          );
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Posts real-time subscription status:', status);
+
+        // Force reload posts setelah subscribe berhasil
+        if (status === 'SUBSCRIBED') {
+          setTimeout(() => {
+            console.log('🔄 Force reloading posts after subscription...');
+            loadGlobalPosts();
+          }, 1000);
+        }
+      });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  };
+
+  // GANTI useEffect utama dengan yang ini:
+  // PERBAIKI useEffect utama untuk sequential initialization yang lebih baik
   useEffect(() => {
     if (currentUser) {
-      loadProjects();
-      loadUsers();
-      setupRealtimeMessages();
-      setupOnlineUsers();
-      setGlobalPosts(samplePosts);
+      console.log('🚀 Initializing real-time features for user:', currentUser.username);
+
+      let unsubscribeMessages;
+      let unsubscribeOnlineUsers;
+      let unsubscribePosts;
+      let unsubscribeUserUpdates;
+
+      const initializeRealtime = async () => {
+        try {
+          console.log('📥 Loading initial data...');
+          // Load initial data terlebih dahulu
+          await loadProjects();
+          await loadUsers();
+          await loadGlobalPosts();
+
+          console.log('🔧 Setting up real-time subscriptions...');
+          // Setup real-time features dengan delay bertahap
+          unsubscribeMessages = setupRealtimeMessages();
+
+          // Beri jeda untuk menghindari race condition
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          unsubscribeOnlineUsers = await setupOnlineUsers();
+
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          unsubscribePosts = setupRealtimePosts();
+
+          console.log('✅ All real-time features initialized successfully');
+
+          // Setup periodic refresh
+          const periodicRefresh = setInterval(() => {
+            console.log('🔄 Periodic data refresh...');
+            loadUsers().catch(console.error);
+            loadGlobalPosts().catch(console.error);
+          }, 45000); // Refresh setiap 45 detik
+
+          return () => {
+            clearInterval(periodicRefresh);
+          };
+
+        } catch (err) {
+          console.error('❌ Error initializing real-time features:', err);
+
+          // Retry dengan exponential backoff
+          setTimeout(initializeRealtime, 10000);
+        }
+      };
+
+      const cleanupPeriodic = initializeRealtime();
+
+      // Cleanup function
+      return () => {
+        console.log('🧹 Cleaning up all real-time subscriptions');
+        if (unsubscribeMessages) unsubscribeMessages();
+        if (unsubscribeOnlineUsers) unsubscribeOnlineUsers();
+        if (unsubscribePosts) unsubscribePosts();
+        if (unsubscribeUserUpdates) unsubscribeUserUpdates();
+        if (cleanupPeriodic) cleanupPeriodic();
+      };
     }
+  }, [currentUser]);
+
+  // Tambahkan heartbeat untuk maintain online status
+  // Tambahkan heartbeat untuk maintain online status - DIPERBAIKI
+  // GANTI heartbeat useEffect dengan yang ini:
+  // PERBAIKI heartbeat untuk lebih reliable
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let isMounted = true;
+
+    const heartbeat = async () => {
+      if (!isMounted) return;
+
+      try {
+        const { error } = await supabase
+          .from('users')
+          .update({
+            last_seen: new Date().toISOString(),
+            is_online: true
+          })
+          .eq('id', currentUser.id);
+
+        if (error) {
+          console.error('❌ Heartbeat update error:', error);
+        } else {
+          console.log('💓 Heartbeat updated for user:', currentUser.username);
+        }
+      } catch (err) {
+        console.error('❌ Heartbeat failed:', err);
+      }
+    };
+
+    // Jalankan segera setelah mount
+    heartbeat();
+
+    // Setup interval
+    const heartbeatInterval = setInterval(heartbeat, 15000); // Every 15 seconds
+
+    return () => {
+      isMounted = false;
+      clearInterval(heartbeatInterval);
+
+      // Set offline ketika unmount
+      if (currentUser) {
+        console.log('🚪 Setting user offline on unmount:', currentUser.username);
+        supabase
+          .from('users')
+          .update({
+            is_online: false,
+            last_seen: new Date().toISOString()
+          })
+          .eq('id', currentUser.id)
+          .then(() => console.log('✅ User set to offline'))
+          .catch(err => console.error('❌ Error setting offline:', err));
+      }
+    };
   }, [currentUser]);
 
   useEffect(() => {
@@ -483,107 +780,357 @@ const FreelancerManager = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-    // Setup realtime messages
-    const setupRealtimeMessages = () => {
-      if (!currentUser) return;
-  
-      const subscription = supabase
-        .channel('messages')
+  // GANTI fungsi setupRealtimeMessages dengan yang ini:
+  const setupRealtimeMessages = () => {
+    if (!currentUser) return;
+
+    console.log('💬 Setting up real-time messages for user:', currentUser.id);
+
+    const subscription = supabase
+      .channel('public:messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `or(receiver_id.eq.${currentUser.id},sender_id.eq.${currentUser.id})`
+        },
+        async (payload) => {
+          console.log('💌 New message received via real-time:', payload);
+
+          // Jika message baru dan belum ada di state, tambahkan
+          setMessages(prev => {
+            const exists = prev.some(msg => msg.id === payload.new.id);
+            if (!exists) {
+              console.log('➕ Adding new message to state');
+              return [...prev, payload.new];
+            }
+            return prev;
+          });
+
+          // Jika message terkait dengan user yang sedang dipilih, scroll ke bawah
+          if (selectedUser &&
+            (payload.new.sender_id === selectedUser.id ||
+              payload.new.receiver_id === selectedUser.id)) {
+            setTimeout(scrollToBottom, 100);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `or(receiver_id.eq.${currentUser.id},sender_id.eq.${currentUser.id})`
+        },
+        (payload) => {
+          console.log('✏️ Message updated:', payload);
+          // Update message jika ada perubahan (misalnya status read)
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === payload.new.id ? { ...msg, ...payload.new } : msg
+            )
+          );
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Messages real-time subscription status:', status);
+      });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  };
+
+  // Setup online users tracking dengan presence channel yang benar
+  // GANTI fungsi setupOnlineUsers dengan yang ini:
+  // GANTI fungsi setupOnlineUsers dengan yang ini:
+  const setupOnlineUsers = async () => {
+    if (!currentUser) return;
+
+    try {
+      console.log('🟢 Setting up online presence for:', currentUser.username);
+
+      // 1. Set current user sebagai online di database
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          is_online: true,
+          last_seen: new Date().toISOString()
+        })
+        .eq('id', currentUser.id);
+
+      if (updateError) {
+        console.error('Error setting online status:', updateError);
+      }
+
+      // 2. Create presence channel dengan config yang benar
+      const presenceChannel = supabase.channel('online_users_global', {
+        config: {
+          presence: {
+            key: currentUser.id,
+          },
+          broadcast: { self: true } // Penting: enable self broadcast
+        },
+      });
+
+      // 3. Subscribe to presence events
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          console.log('🔄 Presence sync event triggered');
+          const state = presenceChannel.presenceState();
+          const onlineUserIds = new Set();
+
+          console.log('📊 Current presence state:', state);
+
+          Object.values(state).forEach((presences) => {
+            presences.forEach((presence) => {
+              onlineUserIds.add(presence.key);
+              console.log('   👤 Online user found:', presence.key, presence.username);
+            });
+          });
+
+          console.log('✅ Final online users count:', onlineUserIds.size);
+          setOnlineUsers(onlineUserIds);
+        })
+        .on('presence', { event: 'join' }, ({ newPresences }) => {
+          console.log('🎉 User JOINED presence:', newPresences);
+          newPresences.forEach(presence => {
+            console.log('   ➕ Adding user to online:', presence.key, presence.username);
+            setOnlineUsers(prev => {
+              const newSet = new Set(prev);
+              newSet.add(presence.key);
+              console.log('   📈 Online users after join:', Array.from(newSet));
+              return newSet;
+            });
+          });
+        })
+        .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+          console.log('👋 User LEFT presence:', leftPresences);
+          leftPresences.forEach(presence => {
+            console.log('   ➖ Removing user from online:', presence.key);
+            setOnlineUsers(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(presence.key);
+              console.log('   📉 Online users after leave:', Array.from(newSet));
+              return newSet;
+            });
+          });
+        })
+        .subscribe(async (status) => {
+          console.log('📡 Presence subscription status:', status);
+
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Presence channel subscribed successfully');
+
+            // Track presence dengan data yang lengkap
+            const trackData = {
+              user_id: currentUser.id,
+              username: currentUser.username,
+              online_at: new Date().toISOString(),
+              avatar: currentUser.username.charAt(0).toUpperCase(),
+              // Tambahkan timestamp untuk debugging
+              tracked_at: new Date().toISOString()
+            };
+
+            console.log('📍 Tracking presence with data:', trackData);
+
+            const trackStatus = await presenceChannel.track(trackData);
+            console.log('📍 Presence track status:', trackStatus);
+
+            // Force re-sync setelah 3 detik untuk memastikan data terbaru
+            setTimeout(async () => {
+              console.log('🔄 Force re-syncing presence data...');
+              // Untrack dan track ulang untuk memastikan sync
+              await presenceChannel.untrack();
+              await presenceChannel.track({
+                ...trackData,
+                re_synced_at: new Date().toISOString()
+              });
+            }, 3000);
+          }
+        });
+
+      return () => {
+        console.log('🧹 Cleaning up presence channel for:', currentUser.username);
+        presenceChannel.untrack();
+        presenceChannel.unsubscribe();
+      };
+
+    } catch (err) {
+      console.error('❌ Error in setupOnlineUsers:', err);
+    }
+  };
+  // Load semua users (kecuali current user)
+  // Load semua users dengan real-time updates - DIPERBAIKI
+  // GANTI fungsi loadUsers dengan yang ini:
+  // PERBAIKI fungsi loadUsers dengan menambahkan real-time untuk user baru
+  const loadUsers = async () => {
+    if (!currentUser) return;
+
+    try {
+      console.log('👥 Loading users...');
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, username, created_at, is_online, last_seen')
+        .neq('id', currentUser.id)
+        .order('username');
+
+      if (error) {
+        console.error('❌ Error loading users:', error);
+        return;
+      }
+
+      console.log('✅ Loaded users:', data.length);
+      setUsers(data);
+
+      // Update onlineUsers set berdasarkan data dari database juga
+      const onlineFromDB = data.filter(user => user.is_online).map(user => user.id);
+      console.log('💾 Online users from database:', onlineFromDB);
+
+      setOnlineUsers(prev => {
+        const newSet = new Set([...prev, ...onlineFromDB]);
+        console.log('🔄 Combined online users:', Array.from(newSet));
+        return newSet;
+      });
+
+      // Setup real-time untuk user updates - LEBIH SIMPLE
+      const userUpdatesChannel = supabase
+        .channel('user_updates_global')
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*', // Listen untuk semua event
             schema: 'public',
-            table: 'messages',
-            filter: `receiver_id=eq.${currentUser.id}`
+            table: 'users',
           },
-          (payload) => {
-            setMessages(prev => [...prev, payload.new]);
+          async (payload) => {
+            console.log('🔄 User database update:', payload.eventType, payload.new?.username);
+
+            if (payload.eventType === 'INSERT') {
+              // User baru terdaftar - reload users list
+              console.log('🆕 New user detected, reloading users list...');
+              const { data: freshUsers } = await supabase
+                .from('users')
+                .select('id, username, created_at, is_online, last_seen')
+                .neq('id', currentUser.id)
+                .order('username');
+
+              if (freshUsers) {
+                setUsers(freshUsers);
+                console.log('✅ Users list updated with new user');
+              }
+            }
+
+            if (payload.eventType === 'UPDATE') {
+              // Update status online user
+              console.log('🔄 User status update:', payload.new.username, 'online:', payload.new.is_online);
+
+              // Update users list
+              setUsers(prev =>
+                prev.map(user =>
+                  user.id === payload.new.id
+                    ? { ...user, ...payload.new }
+                    : user
+                )
+              );
+
+              // Update onlineUsers set
+              if (payload.new.is_online) {
+                console.log('➕ Adding user to online set:', payload.new.id);
+                setOnlineUsers(prev => {
+                  const newSet = new Set(prev);
+                  newSet.add(payload.new.id);
+                  return newSet;
+                });
+              } else {
+                console.log('➖ Removing user from online set:', payload.new.id);
+                setOnlineUsers(prev => {
+                  const newSet = new Set(prev);
+                  newSet.delete(payload.new.id);
+                  return newSet;
+                });
+              }
+            }
           }
         )
-        .subscribe();
-  
+        .subscribe((status) => {
+          console.log('📡 User updates subscription status:', status);
+        });
+
       return () => {
-        subscription.unsubscribe();
+        userUpdatesChannel.unsubscribe();
       };
-    };
-  
-    // Setup online users tracking
-    const setupOnlineUsers = () => {
-      if (!currentUser) return;
-  
-      // Simulasi status online (dalam real app, gunakan presence system)
-      const interval = setInterval(() => {
-        setOnlineUsers(prev => new Set([...prev, currentUser.id]));
-      }, 5000);
-  
-      return () => clearInterval(interval);
-    };
-  
-    // Load semua users (kecuali current user)
-    const loadUsers = async () => {
-      if (!currentUser) return;
-  
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, username, created_at')
-        .neq('id', currentUser.id)
-        .order('username');
-  
-      if (error) {
-        console.error('Error loading users:', error);
-        return;
-      }
-  
-      setUsers(data);
-    };
-  
-    // Load messages dengan user tertentu
-    const loadMessages = async (otherUserId) => {
-      if (!currentUser) return;
-  
+
+    } catch (err) {
+      console.error('❌ Error in loadUsers:', err);
+    }
+  };
+
+  // Load messages dengan user tertentu - diperbaiki
+  const loadMessages = async (otherUserId) => {
+    if (!currentUser) return;
+
+    try {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
         .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
         .order('created_at', { ascending: true });
-  
+
       if (error) {
         console.error('Error loading messages:', error);
         return;
       }
-  
-      setMessages(data);
-    };
-  
-    // Kirim message
-    const sendMessage = async () => {
-      if (!newMessage.trim() || !selectedUser || !currentUser) return;
-  
-      const tempMessage = newMessage;
-      setNewMessage(''); // Clear immediately
-  
-      try {
-        const { data, error } = await supabase
-          .from('messages')
-          .insert([{
-            sender_id: currentUser.id,
-            receiver_id: selectedUser.id,
-            content: tempMessage.trim(),
-            is_read: false
-          }])
-          .select()
-          .single();
-  
-        if (error) throw error;
-  
-        setMessages(prev => [...prev, data]);
-      } catch (err) {
-        console.error('Error sending message:', err);
-        setNewMessage(tempMessage); // Restore message if failed
-        alert('Gagal mengirim pesan');
-      }
-    };
+
+      console.log('Loaded messages:', data);
+      setMessages(data || []);
+    } catch (err) {
+      console.error('Error in loadMessages:', err);
+    }
+  };
+
+  // Kirim message - diperbaiki
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !selectedUser || !currentUser) return;
+
+    const tempMessage = newMessage;
+    setNewMessage(''); // Clear immediately
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert([{
+          sender_id: currentUser.id,
+          receiver_id: selectedUser.id,
+          content: tempMessage.trim(),
+          is_read: false,
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      console.log('Message sent:', data);
+
+      // Update messages state
+      setMessages(prev => [...prev, data]);
+
+      // Scroll to bottom
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setNewMessage(tempMessage); // Restore message if failed
+      alert('Gagal mengirim pesan: ' + err.message);
+    }
+  };
 
   const loadProjects = async () => {
     const { data, error } = await supabase
@@ -591,7 +1138,7 @@ const FreelancerManager = () => {
       .select('*')
       .eq('user_id', currentUser.id)
       .order('created_at', { ascending: false });
-    
+
     if (error) {
       console.error('Error loading projects:', error);
       return;
@@ -602,7 +1149,7 @@ const FreelancerManager = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-  
+
     try {
       // 1. Ambil user dari database
       const { data: user, error } = await supabase
@@ -610,21 +1157,21 @@ const FreelancerManager = () => {
         .select("*")
         .eq("username", loginForm.username)
         .single();
-  
+
       if (error || !user) throw new Error("User tidak ditemukan");
-  
+
       // 2. Bandingkan password hashed
       const isPasswordValid = await bcrypt.compare(
         loginForm.password,
         user.password
       );
-  
+
       if (!isPasswordValid) throw new Error("Password salah");
-  
+
       // 3. Login sukses
       setCurrentUser(user);
       setShowLogin(false);
-  
+
     } catch (err) {
       alert(`Login gagal: ${err.message}`);
     }
@@ -632,26 +1179,26 @@ const FreelancerManager = () => {
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    
+
     try {
       // 1. Validasi input
       if (registerForm.password !== registerForm.confirmPassword) {
         throw new Error("Password dan konfirmasi tidak cocok");
       }
-  
+
       // 2. Cek username sudah ada
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('username')
         .eq('username', registerForm.username)
         .maybeSingle();
-  
+
       if (checkError) throw checkError;
       if (existingUser) throw new Error("Username sudah terdaftar");
-  
+
       // 3. Hash password
       const hashedPassword = await bcrypt.hash(registerForm.password, 10);
-  
+
       // 4. Registrasi user
       const { data: newUser, error: registerError } = await supabase
         .from('users')
@@ -661,13 +1208,13 @@ const FreelancerManager = () => {
         }])
         .select()
         .single();
-  
+
       if (registerError) throw registerError;
-  
+
       // Sukses
       setCurrentUser(newUser);
       setShowRegister(false);
-      
+
     } catch (err) {
       console.error("Detail error:", err); // Lihat di browser console
       alert(`Registrasi gagal: ${err.message || "Silakan coba lagi"}`);
@@ -701,29 +1248,29 @@ const FreelancerManager = () => {
   };
 
   const calculateTotal = () => {
-  if (projectForm.rateType === 'feature') {
-    return (projectForm.features || []).reduce(
-      (sum, feature) => sum + (Number(feature.price) || 0), 
-      0
-    );
-  } else {
-    return (Number(projectForm.hourlyRate) || 0) * 
-           (Number(projectForm.estimatedHours) || 0);
-  }
-};
+    if (projectForm.rateType === 'feature') {
+      return (projectForm.features || []).reduce(
+        (sum, feature) => sum + (Number(feature.price) || 0),
+        0
+      );
+    } else {
+      return (Number(projectForm.hourlyRate) || 0) *
+        (Number(projectForm.estimatedHours) || 0);
+    }
+  };
 
   const handleAddProject = async (e) => {
     e.preventDefault();
-    
+
     try {
       // 1. Validasi form
       if (!projectForm.clientName || !projectForm.projectTitle) {
         throw new Error("Nama client dan judul proyek wajib diisi");
       }
-  
+
       // 2. Hitung total amount
       const totalAmount = calculateTotal();
-  
+
       // 3. Siapkan data untuk Supabase
       const projectData = {
         user_id: currentUser.id,
@@ -733,35 +1280,35 @@ const FreelancerManager = () => {
           name: f.name.trim(),
           price: Number(f.price)
         })),
-        hourly_rate: projectForm.rateType === 'hourly' ? 
-                  Number(projectForm.hourlyRate) : 
-                  null, // atau 0 jika kolom tidak nullable
-        estimated_hours: projectForm.rateType === 'hourly' ? 
-                      Number(projectForm.estimatedHours) : 
-                      null,
+        hourly_rate: projectForm.rateType === 'hourly' ?
+          Number(projectForm.hourlyRate) :
+          null, // atau 0 jika kolom tidak nullable
+        estimated_hours: projectForm.rateType === 'hourly' ?
+          Number(projectForm.estimatedHours) :
+          null,
         deadline: projectForm.deadline || null,
         rate_type: projectForm.rateType,
         total_amount: calculateTotal(),
         is_paid: false
       };
-  
+
       console.log("Mengirim data:", projectData); // Debugging
-  
+
       // 4. Simpan ke database
       const { data: savedProject, error } = await supabase
         .from('projects')
         .insert([projectData])
         .select()
         .single();
-  
+
       if (error) {
         console.error("Error dari Supabase:", error);
         throw new Error(error.message || "Gagal menyimpan ke database");
       }
-  
+
       // 5. Update state dan UI
       setProjects(prev => [savedProject, ...prev]);
-      
+
       // 6. Reset form dan tutup modal
       setProjectForm({
         clientName: '',
@@ -772,21 +1319,21 @@ const FreelancerManager = () => {
         deadline: '',
         rateType: 'feature'
       });
-      
+
       setShowAddProject(false);
-      
+
       // 7. Beri feedback ke user
       alert("Proyek berhasil disimpan!");
-  
+
       // 8. Optional: Force reload data dari server
       const { data: freshProjects } = await supabase
         .from('projects')
         .select('*')
         .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false });
-      
+
       if (freshProjects) setProjects(freshProjects);
-  
+
     } catch (err) {
       console.error("Error menyimpan proyek:", err);
       alert(`Gagal menyimpan proyek: ${err.message}`);
@@ -802,15 +1349,15 @@ const FreelancerManager = () => {
         .eq('id', projectId)
         .select()
         .single();
-      
+
       if (error) throw error;
-      
-      setProjects(prevProjects => 
-        prevProjects.map(p => 
+
+      setProjects(prevProjects =>
+        prevProjects.map(p =>
           p.id === projectId ? data : p
         )
       );
-      
+
       if (showProjectDetail && showProjectDetail.id === projectId) {
         setShowProjectDetail(data);
       }
@@ -822,15 +1369,15 @@ const FreelancerManager = () => {
 
   const deleteProject = async (projectId) => {
     if (!window.confirm('Yakin ingin menghapus proyek ini?')) return;
-    
+
     try {
       const { error } = await supabase
         .from('projects')
         .delete()
         .eq('id', projectId);
-      
+
       if (error) throw error;
-      
+
       setProjects(projects.filter(p => p.id !== projectId));
       setShowProjectDetail(null);
     } catch (err) {
@@ -861,7 +1408,7 @@ const FreelancerManager = () => {
       invoiceElement.style.padding = '20px';
       invoiceElement.style.fontFamily = 'Arial, sans-serif';
       invoiceElement.style.maxWidth = '800px';
-      
+
       invoiceElement.innerHTML = `
         <div style="text-align: center; margin-bottom: 20px;">
           <h1 style="color: #3B82F6; margin-bottom: 5px;">WorkIt! Invoice</h1>
@@ -937,22 +1484,22 @@ const FreelancerManager = () => {
           <p>Generated on ${new Date().toLocaleDateString('id-ID')}</p>
         </div>
       `;
-      
+
       // Sembunyikan sementara dari view
       invoiceElement.style.position = 'absolute';
       invoiceElement.style.left = '-9999px';
       document.body.appendChild(invoiceElement);
-      
+
       // Konversi ke canvas lalu ke PDF
       const canvas = await html2canvas(invoiceElement);
       const imgData = canvas.toDataURL('image/png');
-      
+
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4'
       });
-      
+
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const imgWidth = canvas.width;
@@ -960,15 +1507,15 @@ const FreelancerManager = () => {
       const ratio = imgWidth / imgHeight;
       const pdfImgWidth = pageWidth;
       const pdfImgHeight = pageWidth / ratio;
-      
+
       pdf.addImage(imgData, 'PNG', 0, 0, pdfImgWidth, pdfImgHeight);
-      
+
       // Hapus elemen sementara
       document.body.removeChild(invoiceElement);
-      
+
       // Simpan PDF
       pdf.save(`Invoice-${project.client_name}-${project.project_title}.pdf`);
-      
+
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Gagal menghasilkan PDF. Silakan coba lagi.');
@@ -981,8 +1528,8 @@ const FreelancerManager = () => {
   const remainingBalance = totalEarnings - expenses;
 
   const chartData = userProjects.map((project) => ({
-    name: (project.project_title || '').substring(0, 15) + 
-          ((project.project_title || '').length > 15 ? '...' : ''),
+    name: (project.project_title || '').substring(0, 15) +
+      ((project.project_title || '').length > 15 ? '...' : ''),
     pendapatan: project.is_paid ? project.total_amount : 0,
     pending: !project.is_paid ? project.total_amount : 0,
     total: project.total_amount
@@ -1001,18 +1548,16 @@ const FreelancerManager = () => {
   // Komponen Message Bubble yang terpisah
   const MessageBubble = ({ message, currentUser }) => {
     const isOwnMessage = message.sender_id === currentUser.id;
-    
+
     return (
       <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-        <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
-          isOwnMessage
-            ? 'bg-blue-500 text-white rounded-br-none'
-            : 'bg-white text-gray-900 rounded-bl-none shadow-sm'
-        }`}>
-          <p className="text-sm">{message.content}</p>
-          <div className={`flex items-center justify-end space-x-1 mt-1 ${
-            isOwnMessage ? 'text-blue-200' : 'text-gray-400'
+        <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${isOwnMessage
+          ? 'bg-blue-500 text-white rounded-br-none'
+          : 'bg-white text-gray-900 rounded-bl-none shadow-sm'
           }`}>
+          <p className="text-sm">{message.content}</p>
+          <div className={`flex items-center justify-end space-x-1 mt-1 ${isOwnMessage ? 'text-blue-200' : 'text-gray-400'
+            }`}>
             <span className="text-xs">
               {new Date(message.created_at).toLocaleTimeString('id-ID', {
                 hour: '2-digit',
@@ -1031,7 +1576,7 @@ const FreelancerManager = () => {
   // Jika sedang menampilkan network panel
   if (showNetwork) {
     return (
-      <NetworkPanel 
+      <NetworkPanel
         currentUser={currentUser}
         users={users}
         selectedUser={selectedUser}
@@ -1049,6 +1594,9 @@ const FreelancerManager = () => {
         sendMessage={sendMessage}
         setShowNetwork={setShowNetwork}
         setGlobalPosts={setGlobalPosts}
+        addGlobalPost={addGlobalPost}
+        loadUsers={loadUsers}
+        loadGlobalPosts={loadGlobalPosts}
       />
     );
   }
@@ -1071,7 +1619,7 @@ const FreelancerManager = () => {
                 <input
                   type="text"
                   value={loginForm.username}
-                  onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
+                  onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   required
                 />
@@ -1081,7 +1629,7 @@ const FreelancerManager = () => {
                 <input
                   type="password"
                   value={loginForm.password}
-                  onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   required
                 />
@@ -1111,7 +1659,7 @@ const FreelancerManager = () => {
                 <input
                   type="text"
                   value={registerForm.username}
-                  onChange={(e) => setRegisterForm({...registerForm, username: e.target.value})}
+                  onChange={(e) => setRegisterForm({ ...registerForm, username: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   required
                 />
@@ -1121,7 +1669,7 @@ const FreelancerManager = () => {
                 <input
                   type="password"
                   value={registerForm.password}
-                  onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
+                  onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   required
                 />
@@ -1131,7 +1679,7 @@ const FreelancerManager = () => {
                 <input
                   type="password"
                   value={registerForm.confirmPassword}
-                  onChange={(e) => setRegisterForm({...registerForm, confirmPassword: e.target.value})}
+                  onChange={(e) => setRegisterForm({ ...registerForm, confirmPassword: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   required
                 />
@@ -1196,7 +1744,7 @@ const FreelancerManager = () => {
                   <input
                     type="text"
                     value={projectForm.clientName}
-                    onChange={(e) => setProjectForm({...projectForm, clientName: e.target.value})}
+                    onChange={(e) => setProjectForm({ ...projectForm, clientName: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     required
                   />
@@ -1206,7 +1754,7 @@ const FreelancerManager = () => {
                   <input
                     type="text"
                     value={projectForm.projectTitle}
-                    onChange={(e) => setProjectForm({...projectForm, projectTitle: e.target.value})}
+                    onChange={(e) => setProjectForm({ ...projectForm, projectTitle: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     required
                   />
@@ -1218,7 +1766,7 @@ const FreelancerManager = () => {
                 <input
                   type="date"
                   value={projectForm.deadline}
-                  onChange={(e) => setProjectForm({...projectForm, deadline: e.target.value})}
+                  onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   required
                 />
@@ -1232,7 +1780,7 @@ const FreelancerManager = () => {
                       type="radio"
                       value="feature"
                       checked={projectForm.rateType === 'feature'}
-                      onChange={(e) => setProjectForm({...projectForm, rateType: e.target.value})}
+                      onChange={(e) => setProjectForm({ ...projectForm, rateType: e.target.value })}
                       className="mr-2"
                     />
                     Per Fitur
@@ -1242,7 +1790,7 @@ const FreelancerManager = () => {
                       type="radio"
                       value="hourly"
                       checked={projectForm.rateType === 'hourly'}
-                      onChange={(e) => setProjectForm({...projectForm, rateType: e.target.value})}
+                      onChange={(e) => setProjectForm({ ...projectForm, rateType: e.target.value })}
                       className="mr-2"
                     />
                     Per Jam
@@ -1306,7 +1854,7 @@ const FreelancerManager = () => {
                     <input
                       type="number"
                       value={projectForm.hourlyRate}
-                      onChange={(e) => setProjectForm({...projectForm, hourlyRate: parseFloat(e.target.value) || 0})}
+                      onChange={(e) => setProjectForm({ ...projectForm, hourlyRate: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       min="0"
                       step="0.01"
@@ -1318,7 +1866,7 @@ const FreelancerManager = () => {
                     <input
                       type="number"
                       value={projectForm.estimatedHours}
-                      onChange={(e) => setProjectForm({...projectForm, estimatedHours: parseFloat(e.target.value) || 0})}
+                      onChange={(e) => setProjectForm({ ...projectForm, estimatedHours: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       min="0"
                       step="0.1"
@@ -1361,107 +1909,106 @@ const FreelancerManager = () => {
 
   // Project Detail Modal
   // Project Detail Modal
-if (showProjectDetail) {
-  return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-lg p-8">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-800">Detail Proyek</h2>
-            <button
-              onClick={() => setShowProjectDetail(null)}
-              className="text-gray-500 hover:text-gray-700 text-xl font-bold w-8 h-8 flex items-center justify-center"
-            >
-              x
-            </button>
-          </div>
-
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">Informasi Proyek</h3>
-                <div className="space-y-2">
-                  <p><span className="font-medium">Client:</span> {showProjectDetail.client_name}</p>
-                  <p><span className="font-medium">Judul:</span> {showProjectDetail.project_title}</p>
-                  <p><span className="font-medium">Deadline:</span> {new Date(showProjectDetail.deadline).toLocaleDateString('id-ID')}</p>
-                  <p><span className="font-medium">Dibuat:</span> {new Date(showProjectDetail.created_at).toLocaleDateString('id-ID')}</p>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">Keuangan</h3>
-                <div className="space-y-2">
-                  <p><span className="font-medium">Total:</span> Rp {(showProjectDetail?.total_amount || 0).toLocaleString('id-ID')}</p>
-                  <p><span className="font-medium">Status:</span> 
-                    <span className={`ml-2 px-2 py-1 rounded text-sm ${showProjectDetail.is_paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {showProjectDetail.is_paid ? 'Sudah Dibayar' : 'Belum Dibayar'}
-                    </span>
-                  </p>
-                </div>
-              </div>
+  if (showProjectDetail) {
+    return (
+      <div className="min-h-screen bg-gray-100 p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-lg p-8">
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-3xl font-bold text-gray-800">Detail Proyek</h2>
+              <button
+                onClick={() => setShowProjectDetail(null)}
+                className="text-gray-500 hover:text-gray-700 text-xl font-bold w-8 h-8 flex items-center justify-center"
+              >
+                x
+              </button>
             </div>
 
-            {showProjectDetail.rate_type === 'feature' ? (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Daftar Fitur</h3>
-                <div className="space-y-2">
-                  {showProjectDetail.features.map((feature, index) => (
-                    <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <span>{feature.name}</span>
-                      <span className="font-medium">Rp {feature.price.toLocaleString('id-ID')}</span>
-                    </div>
-                  ))}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Informasi Proyek</h3>
+                  <div className="space-y-2">
+                    <p><span className="font-medium">Client:</span> {showProjectDetail.client_name}</p>
+                    <p><span className="font-medium">Judul:</span> {showProjectDetail.project_title}</p>
+                    <p><span className="font-medium">Deadline:</span> {new Date(showProjectDetail.deadline).toLocaleDateString('id-ID')}</p>
+                    <p><span className="font-medium">Dibuat:</span> {new Date(showProjectDetail.created_at).toLocaleDateString('id-ID')}</p>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Keuangan</h3>
+                  <div className="space-y-2">
+                    <p><span className="font-medium">Total:</span> Rp {(showProjectDetail?.total_amount || 0).toLocaleString('id-ID')}</p>
+                    <p><span className="font-medium">Status:</span>
+                      <span className={`ml-2 px-2 py-1 rounded text-sm ${showProjectDetail.is_paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        {showProjectDetail.is_paid ? 'Sudah Dibayar' : 'Belum Dibayar'}
+                      </span>
+                    </p>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Detail Jam Kerja</h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p><span className="font-medium">Rate per Jam:</span> Rp {showProjectDetail.hourly_rate.toLocaleString('id-ID')}</p>
-                  <p><span className="font-medium">Estimasi Jam:</span> {showProjectDetail.estimated_hours} jam</p>
-                </div>
-              </div>
-            )}
 
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={() => editProject(showProjectDetail)}
-                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Edit
-              </button>
-              <button
-                onClick={() => togglePaymentStatus(showProjectDetail.id)}
-                className={`flex items-center px-4 py-2 rounded-lg ${
-                  showProjectDetail.is_paid 
-                    ? 'bg-red-600 hover:bg-red-700 text-white' 
+              {showProjectDetail.rate_type === 'feature' ? (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-4">Daftar Fitur</h3>
+                  <div className="space-y-2">
+                    {showProjectDetail.features.map((feature, index) => (
+                      <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <span>{feature.name}</span>
+                        <span className="font-medium">Rp {feature.price.toLocaleString('id-ID')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-4">Detail Jam Kerja</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p><span className="font-medium">Rate per Jam:</span> Rp {showProjectDetail.hourly_rate.toLocaleString('id-ID')}</p>
+                    <p><span className="font-medium">Estimasi Jam:</span> {showProjectDetail.estimated_hours} jam</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={() => editProject(showProjectDetail)}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </button>
+                <button
+                  onClick={() => togglePaymentStatus(showProjectDetail.id)}
+                  className={`flex items-center px-4 py-2 rounded-lg ${showProjectDetail.is_paid
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
                     : 'bg-green-600 hover:bg-green-700 text-white'
-                }`}
-              >
-                {showProjectDetail.is_paid ? <XCircle className="w-4 h-4 mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-                {showProjectDetail.is_paid ? 'Tandai Belum Dibayar' : 'Tandai Sudah Dibayar'}
-              </button>
-              <button
-                onClick={() => generateProjectPDF(showProjectDetail)}
-                className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Save to PDF
-              </button>
-              <button
-                onClick={() => deleteProject(showProjectDetail.id)}
-                className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Hapus
-              </button>
+                    }`}
+                >
+                  {showProjectDetail.is_paid ? <XCircle className="w-4 h-4 mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                  {showProjectDetail.is_paid ? 'Tandai Belum Dibayar' : 'Tandai Sudah Dibayar'}
+                </button>
+                <button
+                  onClick={() => generateProjectPDF(showProjectDetail)}
+                  className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Save to PDF
+                </button>
+                <button
+                  onClick={() => deleteProject(showProjectDetail.id)}
+                  className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Hapus
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   // Main Dashboard
   return (
@@ -1638,7 +2185,7 @@ if (showProjectDetail) {
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900">Daftar Proyek</h2>
           </div>
-          
+
           {userProjects.length === 0 ? (
             <div className="p-12 text-center">
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -1664,11 +2211,10 @@ if (showProjectDetail) {
                           <p className="text-sm text-gray-600">Client: {project.client_name}</p>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            project.is_paid 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${project.is_paid
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                            }`}>
                             {project.is_paid ? 'Paid' : 'Unpaid'}
                           </span>
                           <span className="text-xs text-gray-500">
@@ -1683,8 +2229,8 @@ if (showProjectDetail) {
                           Rp {(project.total_amount || 0).toLocaleString('id-ID')}
                         </p>
                         <p className="text-sm text-gray-600">
-                          {project.rateType === 'feature' 
-                            ? `${project.features.length} fitur` 
+                          {project.rateType === 'feature'
+                            ? `${project.features.length} fitur`
                             : `${project.estimated_hours} jam`
                           }
                         </p>
@@ -1706,11 +2252,10 @@ if (showProjectDetail) {
                         </button>
                         <button
                           onClick={() => togglePaymentStatus(project.id)}
-                          className={`p-2 transition duration-150 ${
-                            project.isPaid 
-                              ? 'text-green-600 hover:text-green-700' 
-                              : 'text-gray-400 hover:text-green-600'
-                          }`}
+                          className={`p-2 transition duration-150 ${project.isPaid
+                            ? 'text-green-600 hover:text-green-700'
+                            : 'text-gray-400 hover:text-green-600'
+                            }`}
                           title={project.isPaid ? 'Tandai Belum Dibayar' : 'Tandai Sudah Dibayar'}
                         >
                           {project.isPaid ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
