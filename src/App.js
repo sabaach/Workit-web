@@ -1,13 +1,8 @@
 import React from 'react';
-import FreelancerManager from './FreelancerManager';
-import './App.css';
+import FreelancerManager from './views/FreelancerManager';
 
 function App() {
-  return (
-    <div className="App">
-      <FreelancerManager />
-    </div>
-  );
+  return <FreelancerManager />;
 }
 
 export default App;
