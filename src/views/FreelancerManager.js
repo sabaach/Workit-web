@@ -1,3 +1,4 @@
+// views/FreelancerManager.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AuthController from '../controllers/AuthController';
 import ProjectController from '../controllers/ProjectController';
@@ -30,6 +31,7 @@ const FreelancerManager = () => {
   const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '' });
   
   const messagesEndRef = useRef(null);
+  const heartbeatIntervalRef = useRef(null);
 
   const [projectForm, setProjectForm] = useState({
     clientName: '',
@@ -240,7 +242,7 @@ const FreelancerManager = () => {
     initializeApp();
   }, [initializeApp]);
 
-  // Heartbeat for online status
+  // Heartbeat for online status - DIPERBAIKI
   useEffect(() => {
     if (!currentUser) return;
 
@@ -266,14 +268,27 @@ const FreelancerManager = () => {
       }
     };
 
+    // Jalankan heartbeat segera
     heartbeat();
-    const heartbeatInterval = setInterval(heartbeat, 15000);
 
+    // Setup interval
+    heartbeatIntervalRef.current = setInterval(heartbeat, 15000);
+
+    // Cleanup function
     return () => {
       isMounted = false;
-      clearInterval(heartbeatInterval);
+      
+      // Clear interval
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
 
+      // Set offline status ketika unmount - DIPERBAIKI
       if (currentUser) {
+        console.log('🚪 Setting user offline on unmount:', currentUser.username);
+        
+        // Gunakan then/catch untuk handle promise
         supabase
           .from('users')
           .update({
@@ -281,7 +296,16 @@ const FreelancerManager = () => {
             last_seen: new Date().toISOString()
           })
           .eq('id', currentUser.id)
-          .catch(err => console.error('❌ Error setting offline:', err));
+          .then(({ error }) => {
+            if (error) {
+              console.error('❌ Error setting offline status:', error);
+            } else {
+              console.log('✅ User set to offline successfully');
+            }
+          })
+          .catch(err => {
+            console.error('❌ Error in offline status update:', err);
+          });
       }
     };
   }, [currentUser]);
@@ -317,17 +341,65 @@ const FreelancerManager = () => {
     }
   };
 
+  // Logout Handler - DIPERBAIKI
   const handleLogout = async () => {
-    if (currentUser) {
-      await AuthController.setOnlineStatus(currentUser.id, false);
+    try {
+      if (currentUser) {
+        console.log('🚪 Logging out user:', currentUser.username);
+        
+        // Set status offline terlebih dahulu
+        const { error } = await supabase
+          .from('users')
+          .update({
+            is_online: false,
+            last_seen: new Date().toISOString()
+          })
+          .eq('id', currentUser.id);
+
+        if (error) {
+          console.error('❌ Error setting offline status during logout:', error);
+        } else {
+          console.log('✅ User offline status updated during logout');
+        }
+      }
+    } catch (err) {
+      console.error('❌ Error during logout cleanup:', err);
+    } finally {
+      // Clear interval heartbeat
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+
+      // Reset semua state
+      setCurrentUser(null);
+      setCurrentView('login');
+      setProjects([]);
+      setUsers([]);
+      setMessages([]);
+      setGlobalPosts([]);
+      setEditingProject(null);
+      setSelectedUser(null);
+      setNewMessage('');
+      setNewPost('');
+      setSearchTerm('');
+      setExpenses(0);
+      
+      // Reset form login
+      setLoginForm({ username: '', password: '' });
+      setRegisterForm({ username: '', password: '', confirmPassword: '' });
+      setProjectForm({
+        clientName: '',
+        projectTitle: '',
+        features: [{ name: '', price: 0 }],
+        hourlyRate: 0,
+        estimatedHours: 0,
+        deadline: '',
+        rateType: 'feature'
+      });
+
+      console.log('✅ Logout completed successfully');
     }
-    setCurrentUser(null);
-    setCurrentView('login');
-    setProjects([]);
-    setUsers([]);
-    setMessages([]);
-    setGlobalPosts([]);
-    setEditingProject(null);
   };
 
   // Project Handlers
@@ -369,11 +441,6 @@ const FreelancerManager = () => {
           p.id === projectId ? updatedProject : p
         )
       );
-
-      // Jika sedang melihat detail project, update juga state detail
-      if (currentView === 'project-detail' && updatedProject) {
-        // Tetap di halaman detail dengan data terbaru
-      }
     } catch (err) {
       console.error('Error updating payment status:', err);
       alert('Terjadi kesalahan saat mengupdate status pembayaran');
@@ -409,8 +476,8 @@ const FreelancerManager = () => {
   };
 
   const handleShowProjectDetail = (project) => {
+    setEditingProject(project);
     setCurrentView('project-detail');
-    // Simpan project yang sedang dilihat di state terpisah jika diperlukan
   };
 
   const handleGeneratePDF = async (project) => {
@@ -570,11 +637,9 @@ const FreelancerManager = () => {
       );
 
     case 'project-detail':
-      // Untuk project detail, kita perlu tahu project mana yang sedang dilihat
-      // Ini perlu disesuaikan dengan cara Anda menyimpan state project yang sedang dilihat
       return (
         <ProjectDetail
-          project={editingProject} // atau state terpisah untuk project detail
+          project={editingProject}
           onClose={handleBackToDashboard}
           onEdit={handleEditProject}
           onTogglePayment={handleTogglePaymentStatus}
@@ -594,10 +659,7 @@ const FreelancerManager = () => {
           onLogout={handleLogout}
           onOpenNetwork={() => setCurrentView('network')}
           onLoadProjects={loadProjects}
-          onShowProjectDetail={(project) => {
-            setEditingProject(project);
-            setCurrentView('project-detail');
-          }}
+          onShowProjectDetail={handleShowProjectDetail}
           onEditProject={handleEditProject}
           onTogglePaymentStatus={handleTogglePaymentStatus}
           onDeleteProject={handleDeleteProject}
