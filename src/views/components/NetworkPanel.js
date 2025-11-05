@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   MessageCircle,
   Send,
@@ -8,7 +8,7 @@ import {
   Home,
   ThumbsUp,
   MessageSquare,
-  Share
+  Share, Heart
 } from 'lucide-react';
 
 const NetworkPanel = ({
@@ -30,13 +30,47 @@ const NetworkPanel = ({
   setShowNetwork,
   addGlobalPost,
   loadUsers,
-  loadGlobalPosts
+  loadGlobalPosts,
+  toggleLike,
+  userLikes
 }) => {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const isPostLiked = (postId) => {
+    return userLikes.has(postId);
+  };
+
+  const [likingPostId, setLikingPostId] = useState(null);
+
+  const handleLikeClick = async (postId, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!currentUser) {
+      alert('Silakan login untuk like post');
+      return;
+    }
+
+    if (likingPostId) {
+      console.log('⏳ Like action in progress, please wait...');
+      return;
+    }
+
+    console.log('❤️ Like clicked for post:', postId);
+    setLikingPostId(postId);
+
+    try {
+      await toggleLike(postId); // atau toggleLikeRobust
+    } catch (err) {
+      console.error('Error in handleLikeClick:', err);
+    } finally {
+      setLikingPostId(null);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -168,16 +202,38 @@ const NetworkPanel = ({
 
                   <div className="post-stats mb-4">
                     <div className="stats-info flex space-x-4 text-gray-500 text-sm">
-                      <span className="stat-item">{post.likes} suka</span>
+                      <span className="stat-item">
+                        <span className="font-semibold">{post.likes}</span> suka
+                        {/* Debug info - bisa dihapus nanti */}
+                        <span className="text-xs text-gray-400 ml-1">
+                          (ID: {post.id.substring(0, 8)})
+                        </span>
+                      </span>
                       <span className="stat-item">{post.comments} komentar</span>
                       <span className="stat-item">{post.shares} bagikan</span>
                     </div>
                   </div>
 
                   <div className="post-actions flex border-t border-gray-200 pt-4">
-                    <button className="post-action like flex-1 flex items-center justify-center space-x-2 text-gray-600 hover:text-blue-600 py-2 rounded-lg hover:bg-gray-100 transition-colors">
-                      <ThumbsUp className="action-icon w-5 h-5" />
-                      <span className="text-sm">Suka</span>
+                    <button
+                      onClick={(e) => handleLikeClick(post.id, e)}
+                      disabled={likingPostId === post.id}
+                      className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${likingPostId === post.id
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:bg-gray-100'
+                        } ${isPostLiked(post.id)
+                          ? 'text-red-600 hover:text-red-700'
+                          : 'text-gray-600 hover:text-blue-600'
+                        }`}
+                    >
+                      <Heart
+                        className={`action-icon w-5 h-5 ${isPostLiked(post.id) ? 'fill-red-500 text-red-500' : 'text-gray-600'
+                          } ${likingPostId === post.id ? 'animate-pulse' : ''}`}
+                      />
+                      <span className="text-sm">
+                        {likingPostId === post.id ? 'Loading...' :
+                          isPostLiked(post.id) ? 'Disukai' : 'Suka'}
+                      </span>
                     </button>
                     <button className="post-action comment flex-1 flex items-center justify-center space-x-2 text-gray-600 hover:text-blue-600 py-2 rounded-lg hover:bg-gray-100 transition-colors">
                       <MessageSquare className="action-icon w-5 h-5" />

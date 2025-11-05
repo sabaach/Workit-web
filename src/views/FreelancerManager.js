@@ -29,7 +29,7 @@ const FreelancerManager = () => {
   const [editingProject, setEditingProject] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '' });
-  
+  const [userLikes, setUserLikes] = useState(new Set());
   const messagesEndRef = useRef(null);
   const heartbeatIntervalRef = useRef(null);
 
@@ -107,20 +107,192 @@ const FreelancerManager = () => {
     }
   }, [currentUser]);
 
-  const loadGlobalPosts = useCallback(async () => {
+  // PERBAIKI: toggleLike function di FreelancerManager.js
+  // PERBAIKI: toggleLike function dengan error handling yang proper
+  // PERBAIKI: toggleLike tanpa memanggil loadGlobalPosts setelahnya
+  const toggleLike = async (postId) => {
+    if (!currentUser) return;
+
+    const currentPost = globalPosts.find(p => p.id === postId);
+    const isCurrentlyLiked = userLikes.has(postId);
+    const currentLikes = currentPost?.likes || 0;
+
+    console.log('🔄 toggleLike started:', { postId, currentLikes, isCurrentlyLiked });
+
     try {
-      if (!currentUser) {
-        setGlobalPosts(samplePosts);
+      // 1. Hitung new likes count
+      const newLikesCount = isCurrentlyLiked ?
+        Math.max(currentLikes - 1, 0) :
+        currentLikes + 1;
+
+      const newLikeStatus = !isCurrentlyLiked;
+
+      // 2. Update UI immediately - OPTIMISTIC UPDATE
+      console.log('🎯 Updating UI immediately:', { newLikesCount, newLikeStatus });
+
+      setGlobalPosts(prev =>
+        prev.map(post =>
+          post.id === postId
+            ? {
+              ...post,
+              likes: newLikesCount,
+              user_has_liked: newLikeStatus
+            }
+            : post
+        )
+      );
+
+      // Update userLikes state
+      setUserLikes(prev => {
+        const newSet = new Set(prev);
+        if (newLikeStatus) {
+          newSet.add(postId);
+        } else {
+          newSet.delete(postId);
+        }
+        return newSet;
+      });
+
+      // 3. Update database - tapi JANGAN panggil loadGlobalPosts setelah ini
+      if (isCurrentlyLiked) {
+        // UNLIKE
+        console.log('🗑️ Removing like from database...');
+        const { error: deleteError } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', currentUser.id);
+
+        if (deleteError) throw deleteError;
+
+      } else {
+        // LIKE
+        console.log('💖 Adding like to database...');
+        const { error: insertError } = await supabase
+          .from('post_likes')
+          .insert({
+            post_id: postId,
+            user_id: currentUser.id
+          });
+
+        if (insertError) throw insertError;
+      }
+
+      // 4. Update likes count di global_posts
+      console.log('📊 Updating likes count in database...');
+      const { error: updateError } = await supabase
+        .from('global_posts')
+        .update({
+          likes: newLikesCount
+        })
+        .eq('id', postId);
+
+      if (updateError) {
+        console.error('❌ Error updating likes count:', updateError);
+        // Jangan throw error, karena like action sudah berhasil
+      }
+
+      console.log('✅ toggleLike completed successfully');
+
+    } catch (err) {
+      console.error('❌ Error in toggleLike:', err);
+
+      // ROLLBACK UI hanya jika ada error
+      console.log('🔄 Rolling back UI due to error');
+      setGlobalPosts(prev =>
+        prev.map(post =>
+          post.id === postId
+            ? {
+              ...post,
+              likes: currentLikes,
+              user_has_liked: isCurrentlyLiked
+            }
+            : post
+        )
+      );
+
+      setUserLikes(prev => {
+        const newSet = new Set(prev);
+        if (isCurrentlyLiked) {
+          newSet.add(postId);
+        } else {
+          newSet.delete(postId);
+        }
+        return newSet;
+      });
+
+      alert('Gagal mengupdate like: ' + err.message);
+    }
+  };
+
+  // PERBAIKI: Fungsi untuk load user likes
+  const loadUserLikes = async () => {
+    if (!currentUser) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('post_likes')
+        .select('post_id')
+        .eq('user_id', currentUser.id);
+
+      if (error) throw error;
+
+      const likedPostIds = new Set(data.map(like => like.post_id));
+      setUserLikes(likedPostIds);
+      console.log('✅ Loaded user likes:', Array.from(likedPostIds));
+
+    } catch (err) {
+      console.error('❌ Error loading user likes:', err);
+    }
+  };
+
+  const isPostLiked = (postId) => {
+    return userLikes.has(postId);
+  };
+
+  // PERBAIKI: loadGlobalPosts function
+  // PERBAIKI: loadGlobalPosts dengan debugging detail
+  const loadGlobalPosts = async () => {
+    if (!currentUser) return;
+
+    try {
+      console.log('🔄 Loading posts via RPC...');
+
+      const { data, error } = await supabase
+        .rpc('get_posts_with_likes', {
+          current_user_id: currentUser.id
+        });
+
+      if (error) {
+        console.error('❌ RPC error:', error);
         return;
       }
-      
-      const posts = await PostController.loadPosts();
-      setGlobalPosts(posts);
-    } catch (error) {
-      console.error('Error loading posts:', error);
-      setGlobalPosts(samplePosts);
+
+      console.log('✅ RPC result:', data);
+
+      // Format data dari RPC
+      const formattedPosts = data.map(post => ({
+        id: post.id,
+        user: {
+          name: post.username,
+          avatar: post.username.charAt(0).toUpperCase()
+        },
+        content: post.content,
+        timestamp: formatTimeAgo(post.created_at),
+        likes: post.likes_count || 0,
+        comments: post.comments || 0,
+        shares: post.shares || 0,
+        created_at: post.created_at,
+        user_has_liked: post.user_has_liked || false
+      }));
+
+      setGlobalPosts(formattedPosts);
+      setUserLikes(new Set(data.filter(p => p.user_has_liked).map(p => p.id)));
+
+    } catch (err) {
+      console.error('❌ RPC load error:', err);
     }
-  }, [currentUser]);
+  };
 
   const loadMessages = useCallback(async (otherUserId) => {
     if (!currentUser) return;
@@ -146,6 +318,8 @@ const FreelancerManager = () => {
   const setupRealtimeSubscriptions = useCallback(() => {
     let unsubscribeMessages;
     let unsubscribePosts;
+    let unsubscribeLikes;
+    let unsubscribePostUpdates;
 
     if (currentUser) {
       // Setup real-time messaging
@@ -162,9 +336,9 @@ const FreelancerManager = () => {
               return prev;
             });
 
-            if (selectedUser && 
-                (payload.new.sender_id === selectedUser.id || 
-                 payload.new.receiver_id === selectedUser.id)) {
+            if (selectedUser &&
+              (payload.new.sender_id === selectedUser.id ||
+                payload.new.receiver_id === selectedUser.id)) {
               setTimeout(scrollToBottom, 100);
             }
           }
@@ -175,6 +349,7 @@ const FreelancerManager = () => {
       unsubscribePosts = PostController.setupRealtimePosts(
         async (event, payload) => {
           if (event === 'INSERT' && payload.new.user_id !== currentUser.id) {
+            // Handle new posts
             try {
               const { data: userData } = await supabase
                 .from('users')
@@ -191,10 +366,11 @@ const FreelancerManager = () => {
                   },
                   content: payload.new.content,
                   timestamp: formatTimeAgo(payload.new.created_at),
-                  likes: payload.new.likes,
-                  comments: payload.new.comments,
-                  shares: payload.new.shares,
-                  created_at: payload.new.created_at
+                  likes: payload.new.likes || 0,
+                  comments: payload.new.comments || 0,
+                  shares: payload.new.shares || 0,
+                  created_at: payload.new.created_at,
+                  user_has_liked: false // Default untuk post baru
                 };
 
                 setGlobalPosts(prev => {
@@ -209,8 +385,134 @@ const FreelancerManager = () => {
               console.error('❌ Error processing new post:', err);
             }
           }
+
+          // Handle post updates (termasuk like count changes)
+          if (event === 'UPDATE') {
+            console.log('✏️ Post updated via real-time:', payload.new.id, 'likes:', payload.new.likes);
+            setGlobalPosts(prev =>
+              prev.map(post =>
+                post.id === payload.new.id
+                  ? {
+                    ...post,
+                    likes: payload.new.likes || 0,
+                    comments: payload.new.comments || 0,
+                    shares: payload.new.shares || 0
+                  }
+                  : post
+              )
+            );
+          }
         }
       );
+
+      // TAMBAHKAN: Real-time untuk post_likes
+      unsubscribeLikes = supabase
+        .channel('post_likes_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'post_likes',
+            filter: `user_id=eq.${currentUser.id}`
+          },
+          async (payload) => {
+            console.log('❤️ Post like update:', payload.eventType, payload.new?.post_id);
+
+            // Refresh user likes ketika ada perubahan
+            await loadUserLikes();
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Post likes subscription status:', status);
+        });
+
+      // TAMBAHKAN: Real-time untuk global_posts updates (like count changes)
+      unsubscribePostUpdates = supabase
+        .channel('global_posts_likes_updates')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'global_posts'
+          },
+          (payload) => {
+            console.log('🔄 Global post like count updated:', payload.new.id, 'likes:', payload.new.likes);
+
+            // Update like count di UI
+            setGlobalPosts(prev =>
+              prev.map(post => {
+                if (post.id === payload.new.id) {
+                  const currentPost = prev.find(p => p.id === payload.new.id);
+                  // Only update if the likes count is different from our current state
+                  if (currentPost?.likes !== payload.new.likes) {
+                    console.log('🔄 Updating from real-time:', payload.new.likes);
+                    return {
+                      ...post,
+                      likes: payload.new.likes || 0
+                    };
+                  }
+                }
+                return post;
+              })
+            );
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Global posts subscription status:', status);
+        });
+
+      // Setup real-time untuk post_likes (user like status)
+      unsubscribeLikes = supabase
+        .channel('user_likes_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'post_likes',
+            filter: `user_id=eq.${currentUser.id}`
+          },
+          async (payload) => {
+            console.log('❤️ User like status changed:', payload.eventType, 'for post:', payload.new?.post_id);
+
+            if (payload.eventType === 'INSERT') {
+              // User liked a post
+              setUserLikes(prev => new Set([...prev, payload.new.post_id]));
+              setGlobalPosts(prev =>
+                prev.map(post =>
+                  post.id === payload.new.post_id
+                    ? {
+                      ...post,
+                      user_has_liked: true
+                    }
+                    : post
+                )
+              );
+            } else if (payload.eventType === 'DELETE') {
+              // User unliked a post
+              setUserLikes(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(payload.old.post_id);
+                return newSet;
+              });
+              setGlobalPosts(prev =>
+                prev.map(post =>
+                  post.id === payload.old.post_id
+                    ? {
+                      ...post,
+                      user_has_liked: false
+                    }
+                    : post
+                )
+              );
+            }
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 User likes subscription status:', status);
+        });
 
       // Setup online presence
       MessageController.setupOnlinePresence(
@@ -222,6 +524,8 @@ const FreelancerManager = () => {
     return () => {
       if (unsubscribeMessages) unsubscribeMessages();
       if (unsubscribePosts) unsubscribePosts();
+      if (unsubscribeLikes) unsubscribeLikes();
+      if (unsubscribePostUpdates) unsubscribePostUpdates();
     };
   }, [currentUser, selectedUser, scrollToBottom]);
 
@@ -277,7 +581,7 @@ const FreelancerManager = () => {
     // Cleanup function
     return () => {
       isMounted = false;
-      
+
       // Clear interval
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
@@ -287,7 +591,7 @@ const FreelancerManager = () => {
       // Set offline status ketika unmount - DIPERBAIKI
       if (currentUser) {
         console.log('🚪 Setting user offline on unmount:', currentUser.username);
-        
+
         // Gunakan then/catch untuk handle promise
         supabase
           .from('users')
@@ -313,7 +617,7 @@ const FreelancerManager = () => {
   // Auth Handlers
   const handleLogin = async (e) => {
     if (e) e.preventDefault();
-    
+
     try {
       const user = await AuthController.login(loginForm.username, loginForm.password);
       setCurrentUser(user);
@@ -326,11 +630,11 @@ const FreelancerManager = () => {
 
   const handleRegister = async (e) => {
     if (e) e.preventDefault();
-    
+
     try {
       const user = await AuthController.register(
-        registerForm.username, 
-        registerForm.password, 
+        registerForm.username,
+        registerForm.password,
         registerForm.confirmPassword
       );
       setCurrentUser(user);
@@ -346,7 +650,7 @@ const FreelancerManager = () => {
     try {
       if (currentUser) {
         console.log('🚪 Logging out user:', currentUser.username);
-        
+
         // Set status offline terlebih dahulu
         const { error } = await supabase
           .from('users')
@@ -384,7 +688,7 @@ const FreelancerManager = () => {
       setNewPost('');
       setSearchTerm('');
       setExpenses(0);
-      
+
       // Reset form login
       setLoginForm({ username: '', password: '' });
       setRegisterForm({ username: '', password: '', confirmPassword: '' });
@@ -408,7 +712,7 @@ const FreelancerManager = () => {
       const projectData = ProjectController.prepareProjectData(currentUser.id, projectFormData);
       const newProject = await ProjectController.addProject(projectData);
       setProjects(prev => [newProject, ...prev]);
-      
+
       // Reset form dan kembali ke dashboard
       setProjectForm({
         clientName: '',
@@ -420,7 +724,7 @@ const FreelancerManager = () => {
         rateType: 'feature'
       });
       setEditingProject(null);
-      
+
       // Kembali ke dashboard setelah berhasil
       setCurrentView('dashboard');
       alert("Proyek berhasil disimpan!");
@@ -432,10 +736,10 @@ const FreelancerManager = () => {
   const handleTogglePaymentStatus = async (projectId) => {
     try {
       const project = projects.find(p => p.id === projectId);
-      const updatedProject = await ProjectController.updateProject(projectId, { 
-        is_paid: !project.is_paid 
+      const updatedProject = await ProjectController.updateProject(projectId, {
+        is_paid: !project.is_paid
       });
-      
+
       setProjects(prevProjects =>
         prevProjects.map(p =>
           p.id === projectId ? updatedProject : p
@@ -502,7 +806,7 @@ const FreelancerManager = () => {
         selectedUser.id,
         tempMessage
       );
-      
+
       setMessages(prev => [...prev, newMessageData]);
       setTimeout(() => {
         scrollToBottom();
@@ -618,6 +922,9 @@ const FreelancerManager = () => {
           loadGlobalPosts={loadGlobalPosts}
           messagesEndRef={messagesEndRef}
           scrollToBottom={scrollToBottom}
+          toggleLike={toggleLike}
+          isPostLiked={isPostLiked}
+          userLikes={userLikes}
         />
       );
 
