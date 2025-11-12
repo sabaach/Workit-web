@@ -30,6 +30,8 @@ const FreelancerManager = () => {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '' });
   const [userLikes, setUserLikes] = useState(new Set());
+  const [postComments, setPostComments] = useState({}); // { postId: [comments] }
+  const [expandedComments, setExpandedComments] = useState({}); // { postId: boolean }
   const messagesEndRef = useRef(null);
   const heartbeatIntervalRef = useRef(null);
 
@@ -43,37 +45,6 @@ const FreelancerManager = () => {
     rateType: 'feature'
   });
 
-  // Sample posts for initial display
-  const samplePosts = [
-    {
-      id: 1,
-      user: { name: "Ahmad Freelancer", avatar: "A" },
-      content: "Baru saja menyelesaikan project website e-commerce untuk client dari Singapore. Hasilnya memuaskan! 🎉",
-      timestamp: "2 jam yang lalu",
-      likes: 15,
-      comments: 3,
-      shares: 1
-    },
-    {
-      id: 2,
-      user: { name: "Siti Developer", avatar: "S" },
-      content: "Ada yang punya pengalaman menggunakan React Native untuk aplikasi mobile? Butuh saran untuk optimasi performance.",
-      timestamp: "5 jam yang lalu",
-      likes: 8,
-      comments: 7,
-      shares: 0
-    },
-    {
-      id: 3,
-      user: { name: "Budi Designer", avatar: "B" },
-      content: "Share portfolio terbaru saya: budidesigner.dribbble.com. Open for collaboration! ✨",
-      timestamp: "1 hari yang lalu",
-      likes: 25,
-      comments: 5,
-      shares: 2
-    }
-  ];
-
   // Format time ago helper
   const formatTimeAgo = (dateString) => {
     const date = new Date(dateString);
@@ -84,6 +55,136 @@ const FreelancerManager = () => {
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} menit yang lalu`;
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} jam yang lalu`;
     return `${Math.floor(diffInSeconds / 86400)} hari yang lalu`;
+  };
+
+  // Fungsi untuk load comments untuk sebuah post
+  // PERBAIKI: wrap loadComments dengan useCallback
+  const loadComments = useCallback(async (postId) => {
+    if (!currentUser) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('post_comments')
+        .select(`
+        *,
+        user:users(username)
+      `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const formattedComments = data.map(comment => ({
+        id: comment.id,
+        user: {
+          name: comment.user.username,
+          avatar: comment.user.username.charAt(0).toUpperCase()
+        },
+        content: comment.content,
+        timestamp: formatTimeAgo(comment.created_at),
+        created_at: comment.created_at
+      }));
+
+      setPostComments(prev => ({
+        ...prev,
+        [postId]: formattedComments
+      }));
+
+    } catch (err) {
+      console.error('Error loading comments:', err);
+    }
+  }, [currentUser]); // Tambahkan dependencies
+
+  // Fungsi untuk add comment
+  const addComment = async (postId, content) => {
+    if (!currentUser || !content.trim()) return;
+
+    try {
+      // 1. Insert comment ke database
+      const { data: newComment, error: insertError } = await supabase
+        .from('post_comments')
+        .insert({
+          post_id: postId,
+          user_id: currentUser.id,
+          content: content.trim()
+        })
+        .select(`
+        *,
+        user:users(username)
+      `)
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 2. PERBAIKI: Update comments count di global_posts - CARA YANG BENAR
+      // Pertama, ambil current comments_count
+      const { data: currentPost, error: fetchError } = await supabase
+        .from('global_posts')
+        .select('comments_count')
+        .eq('id', postId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Kemudian update dengan nilai yang di-increment
+      const { error: updateError } = await supabase
+        .from('global_posts')
+        .update({
+          comments_count: (currentPost.comments_count || 0) + 1
+        })
+        .eq('id', postId);
+
+      if (updateError) throw updateError;
+
+      // 3. Format new comment untuk UI
+      const formattedComment = {
+        id: newComment.id,
+        user: {
+          name: newComment.user.username,
+          avatar: newComment.user.username.charAt(0).toUpperCase()
+        },
+        content: newComment.content,
+        timestamp: formatTimeAgo(newComment.created_at),
+        created_at: newComment.created_at
+      };
+
+      // 4. Update UI state
+      setPostComments(prev => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), formattedComment]
+      }));
+
+      // 5. Update globalPosts untuk comments count
+      setGlobalPosts(prev =>
+        prev.map(post =>
+          post.id === postId
+            ? {
+              ...post,
+              comments: (post.comments || 0) + 1
+            }
+            : post
+        )
+      );
+
+      console.log('✅ Comment added successfully');
+
+    } catch (err) {
+      console.error('❌ Error adding comment:', err);
+      alert('Gagal menambahkan komentar: ' + err.message);
+    }
+  };
+
+  // Fungsi untuk toggle expanded comments
+  const toggleComments = async (postId) => {
+    setExpandedComments(prev => ({
+      ...prev,
+      [postId]: !prev[postId]
+    }));
+
+    // Load comments jika belum diload
+    if (!postComments[postId]) {
+      await loadComments(postId);
+    }
   };
 
   // Data loading functions
@@ -226,7 +327,7 @@ const FreelancerManager = () => {
   };
 
   // PERBAIKI: Fungsi untuk load user likes
-  const loadUserLikes = async () => {
+  const loadUserLikes = useCallback(async () => {
     if (!currentUser) return;
 
     try {
@@ -244,15 +345,15 @@ const FreelancerManager = () => {
     } catch (err) {
       console.error('❌ Error loading user likes:', err);
     }
-  };
+  }, [currentUser]);
 
   const isPostLiked = (postId) => {
     return userLikes.has(postId);
   };
 
   // PERBAIKI: loadGlobalPosts function
-  // PERBAIKI: loadGlobalPosts dengan debugging detail
-  const loadGlobalPosts = async () => {
+  // PERBAIKI: wrap loadGlobalPosts dengan useCallback
+  const loadGlobalPosts = useCallback(async () => {
     if (!currentUser) return;
 
     try {
@@ -292,7 +393,7 @@ const FreelancerManager = () => {
     } catch (err) {
       console.error('❌ RPC load error:', err);
     }
-  };
+  }, [currentUser]); // Tambahkan dependencies
 
   const loadMessages = useCallback(async (otherUserId) => {
     if (!currentUser) return;
@@ -308,18 +409,21 @@ const FreelancerManager = () => {
     await loadProjects();
     await loadUsers();
     await loadGlobalPosts();
-  }, [loadProjects, loadUsers, loadGlobalPosts]);
+    await loadUserLikes();
+  }, [loadProjects, loadUsers, loadGlobalPosts, loadUserLikes]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
   // Real-time subscriptions
+  // PERBAIKI setupRealtimeSubscriptions dengan dependencies yang benar
   const setupRealtimeSubscriptions = useCallback(() => {
     let unsubscribeMessages;
     let unsubscribePosts;
     let unsubscribeLikes;
     let unsubscribePostUpdates;
+    let unsubscribeComments;
 
     if (currentUser) {
       // Setup real-time messaging
@@ -427,91 +531,37 @@ const FreelancerManager = () => {
           console.log('📡 Post likes subscription status:', status);
         });
 
-      // TAMBAHKAN: Real-time untuk global_posts updates (like count changes)
-      unsubscribePostUpdates = supabase
-        .channel('global_posts_likes_updates')
+      // Real-time untuk komentar baru
+      unsubscribeComments = supabase
+        .channel('post_comments_updates')
         .on(
           'postgres_changes',
           {
-            event: 'UPDATE',
+            event: 'INSERT',
             schema: 'public',
-            table: 'global_posts'
+            table: 'post_comments'
           },
-          (payload) => {
-            console.log('🔄 Global post like count updated:', payload.new.id, 'likes:', payload.new.likes);
+          async (payload) => {
+            console.log('💬 New comment received:', payload.new);
 
-            // Update like count di UI
+            // Load comments untuk post yang dikomentari
+            await loadComments(payload.new.post_id);
+
+            // Update comments count di globalPosts
             setGlobalPosts(prev =>
-              prev.map(post => {
-                if (post.id === payload.new.id) {
-                  const currentPost = prev.find(p => p.id === payload.new.id);
-                  // Only update if the likes count is different from our current state
-                  if (currentPost?.likes !== payload.new.likes) {
-                    console.log('🔄 Updating from real-time:', payload.new.likes);
-                    return {
-                      ...post,
-                      likes: payload.new.likes || 0
-                    };
+              prev.map(post =>
+                post.id === payload.new.post_id
+                  ? {
+                    ...post,
+                    comments: (post.comments || 0) + 1
                   }
-                }
-                return post;
-              })
+                  : post
+              )
             );
           }
         )
         .subscribe((status) => {
-          console.log('📡 Global posts subscription status:', status);
-        });
-
-      // Setup real-time untuk post_likes (user like status)
-      unsubscribeLikes = supabase
-        .channel('user_likes_changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'post_likes',
-            filter: `user_id=eq.${currentUser.id}`
-          },
-          async (payload) => {
-            console.log('❤️ User like status changed:', payload.eventType, 'for post:', payload.new?.post_id);
-
-            if (payload.eventType === 'INSERT') {
-              // User liked a post
-              setUserLikes(prev => new Set([...prev, payload.new.post_id]));
-              setGlobalPosts(prev =>
-                prev.map(post =>
-                  post.id === payload.new.post_id
-                    ? {
-                      ...post,
-                      user_has_liked: true
-                    }
-                    : post
-                )
-              );
-            } else if (payload.eventType === 'DELETE') {
-              // User unliked a post
-              setUserLikes(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(payload.old.post_id);
-                return newSet;
-              });
-              setGlobalPosts(prev =>
-                prev.map(post =>
-                  post.id === payload.old.post_id
-                    ? {
-                      ...post,
-                      user_has_liked: false
-                    }
-                    : post
-                )
-              );
-            }
-          }
-        )
-        .subscribe((status) => {
-          console.log('📡 User likes subscription status:', status);
+          console.log('📡 Comments subscription status:', status);
         });
 
       // Setup online presence
@@ -526,8 +576,9 @@ const FreelancerManager = () => {
       if (unsubscribePosts) unsubscribePosts();
       if (unsubscribeLikes) unsubscribeLikes();
       if (unsubscribePostUpdates) unsubscribePostUpdates();
+      if (unsubscribeComments) unsubscribeComments();
     };
-  }, [currentUser, selectedUser, scrollToBottom]);
+  }, [currentUser, selectedUser, scrollToBottom, loadComments, loadUserLikes]); // Tambahkan dependencies yang diperlukan
 
   // Initialize application
   const initializeApp = useCallback(async () => {
@@ -925,6 +976,10 @@ const FreelancerManager = () => {
           toggleLike={toggleLike}
           isPostLiked={isPostLiked}
           userLikes={userLikes}
+          postComments={postComments}
+          expandedComments={expandedComments}
+          addComment={addComment}
+          toggleComments={toggleComments}
         />
       );
 

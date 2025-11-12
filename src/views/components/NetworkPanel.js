@@ -1,15 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  MessageCircle,
-  Send,
-  Search,
-  MoreVertical,
-  Video,
-  Home,
-  ThumbsUp,
-  MessageSquare,
-  Share, Heart
-} from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { MessageCircle, Send, Search, MoreVertical, Video, Home, MessageSquare, Share, Heart } from 'lucide-react';
 
 const NetworkPanel = ({
   currentUser,
@@ -29,12 +19,19 @@ const NetworkPanel = ({
   sendMessage,
   setShowNetwork,
   addGlobalPost,
-  loadUsers,
-  loadGlobalPosts,
   toggleLike,
-  userLikes
+  userLikes,
+  postComments,
+  expandedComments,
+  addComment,
+  toggleComments
 }) => {
   const messagesEndRef = useRef(null);
+  
+  // State untuk menyimpan input komentar per post
+  const [commentInputs, setCommentInputs] = useState({});
+  const [likingPostId, setLikingPostId] = useState(null);
+  const [submittingComment, setSubmittingComment] = useState(null);
 
   useEffect(() => {
     scrollToBottom();
@@ -44,31 +41,71 @@ const NetworkPanel = ({
     return userLikes.has(postId);
   };
 
-  const [likingPostId, setLikingPostId] = useState(null);
-
   const handleLikeClick = async (postId, e) => {
     e.preventDefault();
     e.stopPropagation();
-
+    
     if (!currentUser) {
       alert('Silakan login untuk like post');
       return;
     }
-
+    
     if (likingPostId) {
-      console.log('⏳ Like action in progress, please wait...');
       return;
     }
-
-    console.log('❤️ Like clicked for post:', postId);
+    
     setLikingPostId(postId);
-
+    
     try {
-      await toggleLike(postId); // atau toggleLikeRobust
+      await toggleLike(postId);
     } catch (err) {
       console.error('Error in handleLikeClick:', err);
     } finally {
       setLikingPostId(null);
+    }
+  };
+
+  // Handler untuk mengubah input komentar - GUNAKAN useCallback
+  const handleCommentInputChange = useCallback((postId, value) => {
+    setCommentInputs(prev => ({
+      ...prev,
+      [postId]: value
+    }));
+  }, []);
+
+  // Handler untuk submit komentar
+  const handleCommentSubmit = async (postId) => {
+    const commentText = commentInputs[postId] || '';
+    
+    if (!commentText.trim()) {
+      return;
+    }
+    
+    if (!currentUser) {
+      alert('Silakan login untuk berkomentar');
+      return;
+    }
+
+    if (submittingComment === postId) {
+      return; // Prevent double submit
+    }
+    
+    setSubmittingComment(postId);
+    
+    try {
+      const success = await addComment(postId, commentText);
+      
+      if (success !== false) {
+        // Clear input setelah berhasil
+        setCommentInputs(prev => ({
+          ...prev,
+          [postId]: ''
+        }));
+      }
+    } catch (error) {
+      console.error('Error submitting comment:', error);
+    } finally {
+      setSubmittingComment(null);
     }
   };
 
@@ -98,21 +135,103 @@ const NetworkPanel = ({
     }
   };
 
+  // Komponen Comment Section - PERBAIKI dengan React.memo
+  const CommentSection = React.memo(({ post }) => {
+    const comments = postComments[post.id] || [];
+    const isExpanded = expandedComments[post.id];
+    const currentComment = commentInputs[post.id] || '';
+    const isSubmitting = submittingComment === post.id;
+
+    const handleKeyPress = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleCommentSubmit(post.id);
+      }
+    };
+
+    return (
+      <div className="comment-section mt-4 border-t border-gray-200 pt-4">
+        {/* Comment Input */}
+        <div className="comment-input-container flex items-center space-x-3 mb-4">
+          <div className="user-avatar small w-8 h-8 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+            {currentUser?.username?.charAt(0).toUpperCase()}
+          </div>
+          <input
+            type="text"
+            placeholder="Tulis komentar..."
+            value={currentComment}
+            onChange={(e) => handleCommentInputChange(post.id, e.target.value)}
+            onKeyPress={handleKeyPress}
+            disabled={isSubmitting}
+            className="comment-input flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+          />
+          <button
+            onClick={() => handleCommentSubmit(post.id)}
+            disabled={!currentComment.trim() || isSubmitting}
+            className={`comment-submit px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              currentComment.trim() && !isSubmitting
+                ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            {isSubmitting ? 'Mengirim...' : 'Kirim'}
+          </button>
+        </div>
+
+        {/* Comments List */}
+        {isExpanded && (
+          <div className="comments-list space-y-3 max-h-60 overflow-y-auto">
+            {comments.length > 0 ? (
+              comments.map(comment => (
+                <div key={comment.id} className="comment-item flex space-x-3">
+                  <div className="user-avatar small w-8 h-8 bg-gradient-to-r from-green-400 to-green-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                    {comment.user.avatar}
+                  </div>
+                  <div className="comment-content flex-1">
+                    <div className="comment-bubble bg-gray-100 rounded-2xl px-4 py-2">
+                      <div className="comment-header flex items-center space-x-2 mb-1">
+                        <span className="comment-author font-semibold text-sm text-gray-900">
+                          {comment.user.name}
+                        </span>
+                        <span className="comment-time text-xs text-gray-500">
+                          {comment.timestamp}
+                        </span>
+                      </div>
+                      <p className="comment-text text-sm text-gray-800">
+                        {comment.content}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-gray-500 text-sm py-4">
+                Belum ada komentar. Jadilah yang pertama berkomentar!
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  });
+
   const MessageBubble = ({ message, currentUser }) => {
     const isOwnMessage = message.sender_id === currentUser.id;
 
     return (
       <div
-        className={`message-bubble max-w-xs lg:max-w-md ${isOwnMessage
-          ? 'ml-auto bg-blue-500 text-white rounded-br-none'
-          : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
-          } rounded-2xl px-4 py-3 transition-colors`}
+        className={`message-bubble max-w-xs lg:max-w-md ${
+          isOwnMessage
+            ? 'ml-auto bg-blue-500 text-white rounded-br-none'
+            : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
+        } rounded-2xl px-4 py-3 transition-colors`}
       >
-        <div className="message-content text-sm">
-          {message.content}
-        </div>
-        <div className={`message-time text-xs mt-2 ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'
-          }`}>
+        <div className="message-content text-sm">{message.content}</div>
+        <div
+          className={`message-time text-xs mt-2 ${
+            isOwnMessage ? 'text-blue-200' : 'text-gray-500'
+          }`}
+        >
           {new Date(message.created_at).toLocaleTimeString('id-ID', {
             hour: '2-digit',
             minute: '2-digit'
@@ -124,7 +243,7 @@ const NetworkPanel = ({
 
   return (
     <div className="network-container min-h-screen bg-gray-100 flex">
-      {/* Sidebar Kiri - Menu Navigasi */}
+      {/* Sidebar Kiri */}
       <div className="left-sidebar w-80 bg-white border-r border-gray-200">
         <div className="p-6">
           <div className="user-profile-section mb-8">
@@ -133,18 +252,22 @@ const NetworkPanel = ({
                 {currentUser?.username?.charAt(0).toUpperCase()}
               </div>
               <div className="user-info">
-                <h3 className="user-name font-semibold text-gray-900">{currentUser?.username}</h3>
+                <h3 className="user-name font-semibold text-gray-900">
+                  {currentUser?.username}
+                </h3>
                 <span className="online-status text-green-600 text-sm">Online</span>
               </div>
             </div>
           </div>
 
           <div className="navigation-section mb-8">
-            <h4 className="section-header text-gray-500 text-sm font-medium mb-4">Menu</h4>
+            <h4 className="section-header text-gray-500 text-sm font-medium mb-4">
+              Menu
+            </h4>
             <div className="nav-items space-y-2">
               <button className="nav-item active w-full flex items-center space-x-3 p-3 rounded-lg bg-blue-50 text-blue-600 transition-colors">
                 <MessageCircle className="nav-icon w-5 h-5" />
-                <span className="text-sm">Perasaan/Aktivitas</span>
+                <span className="text-sm">Forum Global</span>
               </button>
             </div>
           </div>
@@ -155,8 +278,12 @@ const NetworkPanel = ({
       <div className="main-content flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto p-6">
           <div className="main-header mb-6">
-            <h2 className="forum-title text-2xl font-bold text-gray-900 mb-2">Forum Global</h2>
-            <p className="forum-subtitle text-gray-600">Diskusi terbuka untuk semua anggota</p>
+            <h2 className="forum-title text-2xl font-bold text-gray-900 mb-2">
+              Forum Global
+            </h2>
+            <p className="forum-subtitle text-gray-600">
+              Diskusi terbuka untuk semua anggota
+            </p>
           </div>
 
           <div className="feed-container space-y-6">
@@ -180,15 +307,22 @@ const NetworkPanel = ({
             {/* Posts Feed */}
             <div className="posts-feed space-y-6">
               {globalPosts.map((post) => (
-                <div key={post.id} className="post-card bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div
+                  key={post.id}
+                  className="post-card bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+                >
                   <div className="post-header flex justify-between items-start mb-4">
                     <div className="post-author flex items-center space-x-3">
                       <div className="user-avatar medium w-10 h-10 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
                         {post.user.avatar}
                       </div>
                       <div className="author-info">
-                        <h3 className="author-name font-semibold text-gray-900">{post.user.name}</h3>
-                        <p className="post-time text-gray-500 text-sm">{post.timestamp}</p>
+                        <h3 className="author-name font-semibold text-gray-900">
+                          {post.user.name}
+                        </h3>
+                        <p className="post-time text-gray-500 text-sm">
+                          {post.timestamp}
+                        </p>
                       </div>
                     </div>
                     <button className="post-menu text-gray-400 hover:text-gray-600 transition-colors">
@@ -197,17 +331,15 @@ const NetworkPanel = ({
                   </div>
 
                   <div className="post-content mb-4">
-                    <p className="post-text text-gray-800 leading-relaxed">{post.content}</p>
+                    <p className="post-text text-gray-800 leading-relaxed">
+                      {post.content}
+                    </p>
                   </div>
 
                   <div className="post-stats mb-4">
                     <div className="stats-info flex space-x-4 text-gray-500 text-sm">
                       <span className="stat-item">
                         <span className="font-semibold">{post.likes}</span> suka
-                        {/* Debug info - bisa dihapus nanti */}
-                        <span className="text-xs text-gray-400 ml-1">
-                          (ID: {post.id.substring(0, 8)})
-                        </span>
                       </span>
                       <span className="stat-item">{post.comments} komentar</span>
                       <span className="stat-item">{post.shares} bagikan</span>
@@ -218,32 +350,51 @@ const NetworkPanel = ({
                     <button
                       onClick={(e) => handleLikeClick(post.id, e)}
                       disabled={likingPostId === post.id}
-                      className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${likingPostId === post.id
+                      className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${
+                        likingPostId === post.id
                           ? 'opacity-50 cursor-not-allowed'
                           : 'hover:bg-gray-100'
-                        } ${isPostLiked(post.id)
+                      } ${
+                        isPostLiked(post.id)
                           ? 'text-red-600 hover:text-red-700'
                           : 'text-gray-600 hover:text-blue-600'
-                        }`}
+                      }`}
                     >
                       <Heart
-                        className={`action-icon w-5 h-5 ${isPostLiked(post.id) ? 'fill-red-500 text-red-500' : 'text-gray-600'
-                          } ${likingPostId === post.id ? 'animate-pulse' : ''}`}
+                        className={`action-icon w-5 h-5 ${
+                          isPostLiked(post.id)
+                            ? 'fill-red-500 text-red-500'
+                            : 'text-gray-600'
+                        } ${likingPostId === post.id ? 'animate-pulse' : ''}`}
                       />
                       <span className="text-sm">
-                        {likingPostId === post.id ? 'Loading...' :
-                          isPostLiked(post.id) ? 'Disukai' : 'Suka'}
+                        {likingPostId === post.id
+                          ? 'Loading...'
+                          : isPostLiked(post.id)
+                          ? 'Disukai'
+                          : 'Suka'}
                       </span>
                     </button>
-                    <button className="post-action comment flex-1 flex items-center justify-center space-x-2 text-gray-600 hover:text-blue-600 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+
+                    <button
+                      onClick={() => toggleComments(post.id)}
+                      className="post-action comment flex-1 flex items-center justify-center space-x-2 text-gray-600 hover:text-blue-600 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
                       <MessageSquare className="action-icon w-5 h-5" />
                       <span className="text-sm">Komentar</span>
                     </button>
+
                     <button className="post-action share flex-1 flex items-center justify-center space-x-2 text-gray-600 hover:text-blue-600 py-2 rounded-lg hover:bg-gray-100 transition-colors">
                       <Share className="action-icon w-5 h-5" />
                       <span className="text-sm">Bagikan</span>
                     </button>
                   </div>
+
+                  {/* Comment Section */}
+                  {(expandedComments[post.id] ||
+                    (postComments[post.id] && postComments[post.id].length > 0)) && (
+                    <CommentSection post={post} />
+                  )}
                 </div>
               ))}
             </div>
@@ -256,7 +407,9 @@ const NetworkPanel = ({
         <div className="chat-header border-b border-gray-200 p-4">
           <div className="flex justify-between items-center">
             <div>
-              <h3 className="chat-title font-semibold text-gray-900 text-lg">Obrolan</h3>
+              <h3 className="chat-title font-semibold text-gray-900 text-lg">
+                Obrolan
+              </h3>
               <div className="online-indicator flex items-center space-x-2 mt-1">
                 <div className="online-dot w-2 h-2 bg-green-500 rounded-full"></div>
                 <span className="online-count text-gray-500 text-sm">
@@ -267,7 +420,6 @@ const NetworkPanel = ({
                 Total: {users.length + 1} users terdaftar
               </div>
             </div>
-
             <div className="chat-actions flex space-x-1">
               <button className="chat-action-btn p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
                 <Video className="chat-action-icon w-5 h-5" />
@@ -287,7 +439,7 @@ const NetworkPanel = ({
             <Search className="search-icon absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="    Cari percakapan"
+              placeholder="Cari percakapan"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="search-input w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
@@ -296,12 +448,15 @@ const NetworkPanel = ({
         </div>
 
         <div className="contacts-list flex-1 overflow-y-auto">
-          {filteredUsers.map(user => (
+          {filteredUsers.map((user) => (
             <div
               key={user.id}
               onClick={() => handleUserSelect(user)}
-              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${selectedUser?.id === user.id ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
-                }`}
+              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${
+                selectedUser?.id === user.id
+                  ? 'bg-blue-50 border-blue-200'
+                  : 'hover:bg-gray-50'
+              }`}
             >
               <div className="contact-info flex items-center space-x-3">
                 <div className="contact-avatar-container relative">
@@ -313,7 +468,9 @@ const NetworkPanel = ({
                   )}
                 </div>
                 <div className="contact-details flex-1">
-                  <h4 className="contact-name font-medium text-gray-900 text-sm">{user.username}</h4>
+                  <h4 className="contact-name font-medium text-gray-900 text-sm">
+                    {user.username}
+                  </h4>
                   <p className="contact-status text-gray-500 text-xs">
                     {onlineUsers.has(user.id) ? 'Online' : 'Offline'}
                   </p>
@@ -323,7 +480,6 @@ const NetworkPanel = ({
           ))}
         </div>
 
-        {/* Chat Window */}
         {selectedUser && (
           <div className="chat-window absolute right-0 top-0 bottom-0 w-96 bg-white border-l border-gray-200 shadow-lg flex flex-col">
             <div className="chat-window-header border-b border-gray-200 p-4 bg-white">
@@ -333,7 +489,9 @@ const NetworkPanel = ({
                     {selectedUser.username.charAt(0).toUpperCase()}
                   </div>
                   <div className="chat-user-details">
-                    <h4 className="chat-user-name font-semibold text-gray-900 text-sm">{selectedUser.username}</h4>
+                    <h4 className="chat-user-name font-semibold text-gray-900 text-sm">
+                      {selectedUser.username}
+                    </h4>
                     <p className="chat-user-status text-gray-500 text-xs">
                       {onlineUsers.has(selectedUser.id) ? 'Online' : 'Offline'}
                     </p>
@@ -372,10 +530,11 @@ const NetworkPanel = ({
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim()}
-                  className={`send-button p-3 rounded-lg transition-colors ${newMessage.trim()
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
+                  className={`send-button p-3 rounded-lg transition-colors ${
+                    newMessage.trim()
+                      ? 'bg-blue-500 text-white hover:bg-blue-600'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
                 >
                   <Send className="send-icon w-5 h-5" />
                 </button>
