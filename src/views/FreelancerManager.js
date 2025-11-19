@@ -6,6 +6,7 @@ import MessageController from '../controllers/MessageController';
 import PostController from '../controllers/PostController';
 import UserModel from '../models/UserModel';
 import { supabase } from '../services/supabaseClient';
+import { InstagramService } from '../services/InstagramService';
 
 import LoginView from './components/LoginView';
 import Dashboard from './components/Dashboard';
@@ -32,6 +33,7 @@ const FreelancerManager = () => {
   const [userLikes, setUserLikes] = useState(new Set());
   const [postComments, setPostComments] = useState({}); // { postId: [comments] }
   const [expandedComments, setExpandedComments] = useState({}); // { postId: boolean }
+  const [sharingPostId, setSharingPostId] = useState(null);
   const messagesEndRef = useRef(null);
   const heartbeatIntervalRef = useRef(null);
 
@@ -184,6 +186,91 @@ const FreelancerManager = () => {
     // Load comments jika belum diload
     if (!postComments[postId]) {
       await loadComments(postId);
+    }
+  };
+
+  const toggleShare = async (postId) => {
+    if (!currentUser) return;
+
+    try {
+      const currentPost = globalPosts.find(p => p.id === postId);
+      const currentShares = currentPost?.shares || 0;
+
+      // Update share count di database
+      const { error } = await supabase
+        .from('global_posts')
+        .update({
+          shares: currentShares + 1
+        })
+        .eq('id', postId);
+
+      if (error) throw error;
+
+      // Update UI
+      setGlobalPosts(prev =>
+        prev.map(post =>
+          post.id === postId
+            ? {
+              ...post,
+              shares: currentShares + 1
+            }
+            : post
+        )
+      );
+
+    } catch (err) {
+      console.error('Error updating share count:', err);
+      throw err;
+    }
+  };
+
+  const handleShareToInstagram = async (post, postElement) => {
+    try {
+      console.log('🔄 Sharing to Instagram Story:', post.id);
+      
+      // Update share count di database
+      const { error: updateError } = await supabase
+        .from('global_posts')
+        .update({
+          shares: (post.shares || 0) + 1
+        })
+        .eq('id', post.id);
+  
+      if (updateError) throw updateError;
+  
+      // Update UI immediately - optimistic update
+      setGlobalPosts(prev =>
+        prev.map(p =>
+          p.id === post.id
+            ? {
+                ...p,
+                shares: (p.shares || 0) + 1
+              }
+            : p
+        )
+      );
+  
+      // Trigger Instagram Story sharing dengan screenshot
+      await InstagramService.sharePostToInstagramStory(postElement, post);
+      
+      console.log('✅ Successfully shared to Instagram Story');
+      
+    } catch (err) {
+      console.error('❌ Error sharing to Instagram Story:', err);
+      
+      // Rollback share count jika ada error
+      setGlobalPosts(prev =>
+        prev.map(p =>
+          p.id === post.id
+            ? {
+                ...p,
+                shares: Math.max((p.shares || 0) - 1, 0)
+              }
+            : p
+        )
+      );
+      
+      alert('Gagal membagikan ke Instagram Story: ' + err.message);
     }
   };
 
@@ -980,6 +1067,10 @@ const FreelancerManager = () => {
           expandedComments={expandedComments}
           addComment={addComment}
           toggleComments={toggleComments}
+          handleShareToInstagram={handleShareToInstagram}
+          toggleShare={toggleShare}
+          sharingPostId={sharingPostId}
+          setSharingPostId={setSharingPostId}
         />
       );
 

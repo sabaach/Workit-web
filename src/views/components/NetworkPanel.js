@@ -24,10 +24,14 @@ const NetworkPanel = ({
   postComments,
   expandedComments,
   addComment,
-  toggleComments
+  toggleComments,
+  handleShareToInstagram,
+  toggleShare,
+  sharingPostId,
+  setSharingPostId
 }) => {
   const messagesEndRef = useRef(null);
-  
+
   // State untuk menyimpan input komentar per post
   const [commentInputs, setCommentInputs] = useState({});
   const [likingPostId, setLikingPostId] = useState(null);
@@ -44,18 +48,18 @@ const NetworkPanel = ({
   const handleLikeClick = async (postId, e) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!currentUser) {
       alert('Silakan login untuk like post');
       return;
     }
-    
+
     if (likingPostId) {
       return;
     }
-    
+
     setLikingPostId(postId);
-    
+
     try {
       await toggleLike(postId);
     } catch (err) {
@@ -76,11 +80,11 @@ const NetworkPanel = ({
   // Handler untuk submit komentar
   const handleCommentSubmit = async (postId) => {
     const commentText = commentInputs[postId] || '';
-    
+
     if (!commentText.trim()) {
       return;
     }
-    
+
     if (!currentUser) {
       alert('Silakan login untuk berkomentar');
       return;
@@ -89,12 +93,12 @@ const NetworkPanel = ({
     if (submittingComment === postId) {
       return; // Prevent double submit
     }
-    
+
     setSubmittingComment(postId);
-    
+
     try {
       const success = await addComment(postId, commentText);
-      
+
       if (success !== false) {
         // Clear input setelah berhasil
         setCommentInputs(prev => ({
@@ -106,6 +110,55 @@ const NetworkPanel = ({
       console.error('Error submitting comment:', error);
     } finally {
       setSubmittingComment(null);
+    }
+  };
+
+  const handleShareClick = async (post, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!currentUser) {
+      alert('Silakan login untuk membagikan post');
+      return;
+    }
+
+    if (sharingPostId) {
+      return; // Prevent multiple clicks
+    }
+
+    setSharingPostId(post.id);
+
+    try {
+      // Cari element post yang akan di-screenshot
+      const postElement = document.querySelector(`[data-post-id="${post.id}"]`);
+
+      if (!postElement) {
+        throw new Error('Element post tidak ditemukan');
+      }
+
+      // Tambahkan loading state ke element
+      postElement.style.opacity = '0.8';
+
+      // Pertama update share count
+      if (toggleShare) {
+        await toggleShare(post.id);
+      }
+
+      // Kemudian share ke Instagram Story dengan screenshot
+      if (handleShareToInstagram) {
+        await handleShareToInstagram(post, postElement);
+      }
+
+    } catch (err) {
+      console.error('Error in handleShareClick:', err);
+      alert('Gagal membagikan post: ' + err.message);
+    } finally {
+      // Reset loading state
+      const postElement = document.querySelector(`[data-post-id="${post.id}"]`);
+      if (postElement) {
+        postElement.style.opacity = '1';
+      }
+      setSharingPostId(null);
     }
   };
 
@@ -168,11 +221,10 @@ const NetworkPanel = ({
           <button
             onClick={() => handleCommentSubmit(post.id)}
             disabled={!currentComment.trim() || isSubmitting}
-            className={`comment-submit px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-              currentComment.trim() && !isSubmitting
-                ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
+            className={`comment-submit px-4 py-2 rounded-full text-sm font-medium transition-colors ${currentComment.trim() && !isSubmitting
+              ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
           >
             {isSubmitting ? 'Mengirim...' : 'Kirim'}
           </button>
@@ -220,17 +272,15 @@ const NetworkPanel = ({
 
     return (
       <div
-        className={`message-bubble max-w-xs lg:max-w-md ${
-          isOwnMessage
-            ? 'ml-auto bg-blue-500 text-white rounded-br-none'
-            : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
-        } rounded-2xl px-4 py-3 transition-colors`}
+        className={`message-bubble max-w-xs lg:max-w-md ${isOwnMessage
+          ? 'ml-auto bg-blue-500 text-white rounded-br-none'
+          : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
+          } rounded-2xl px-4 py-3 transition-colors`}
       >
         <div className="message-content text-sm">{message.content}</div>
         <div
-          className={`message-time text-xs mt-2 ${
-            isOwnMessage ? 'text-blue-200' : 'text-gray-500'
-          }`}
+          className={`message-time text-xs mt-2 ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'
+            }`}
         >
           {new Date(message.created_at).toLocaleTimeString('id-ID', {
             hour: '2-digit',
@@ -309,7 +359,13 @@ const NetworkPanel = ({
               {globalPosts.map((post) => (
                 <div
                   key={post.id}
-                  className="post-card bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+                  className="post-card bg-white rounded-xl shadow-sm border border-gray-200 p-6 screenshot-optimized"
+                  data-post-id={post.id}
+                  style={{
+                    transform: 'translateZ(0)',
+                    backfaceVisibility: 'hidden',
+                    willChange: 'transform'
+                  }}
                 >
                   <div className="post-header flex justify-between items-start mb-4">
                     <div className="post-author flex items-center space-x-3">
@@ -350,29 +406,26 @@ const NetworkPanel = ({
                     <button
                       onClick={(e) => handleLikeClick(post.id, e)}
                       disabled={likingPostId === post.id}
-                      className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${
-                        likingPostId === post.id
-                          ? 'opacity-50 cursor-not-allowed'
-                          : 'hover:bg-gray-100'
-                      } ${
-                        isPostLiked(post.id)
+                      className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${likingPostId === post.id
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'hover:bg-gray-100'
+                        } ${isPostLiked(post.id)
                           ? 'text-red-600 hover:text-red-700'
                           : 'text-gray-600 hover:text-blue-600'
-                      }`}
+                        }`}
                     >
                       <Heart
-                        className={`action-icon w-5 h-5 ${
-                          isPostLiked(post.id)
-                            ? 'fill-red-500 text-red-500'
-                            : 'text-gray-600'
-                        } ${likingPostId === post.id ? 'animate-pulse' : ''}`}
+                        className={`action-icon w-5 h-5 ${isPostLiked(post.id)
+                          ? 'fill-red-500 text-red-500'
+                          : 'text-gray-600'
+                          } ${likingPostId === post.id ? 'animate-pulse' : ''}`}
                       />
                       <span className="text-sm">
                         {likingPostId === post.id
                           ? 'Loading...'
                           : isPostLiked(post.id)
-                          ? 'Disukai'
-                          : 'Suka'}
+                            ? 'Disukai'
+                            : 'Suka'}
                       </span>
                     </button>
 
@@ -384,17 +437,27 @@ const NetworkPanel = ({
                       <span className="text-sm">Komentar</span>
                     </button>
 
-                    <button className="post-action share flex-1 flex items-center justify-center space-x-2 text-gray-600 hover:text-blue-600 py-2 rounded-lg hover:bg-gray-100 transition-colors">
-                      <Share className="action-icon w-5 h-5" />
-                      <span className="text-sm">Bagikan</span>
+                    <button
+                      onClick={(e) => handleShareClick(post, e)}
+                      disabled={sharingPostId === post.id}
+                      className={`post-action share flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${sharingPostId === post.id
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'text-gray-600 hover:text-green-600 hover:bg-gray-100'
+                        }`}
+                    >
+                      <Share className={`action-icon w-5 h-5 ${sharingPostId === post.id ? 'animate-pulse' : ''
+                        }`} />
+                      <span className="text-sm">
+                        {sharingPostId === post.id ? 'Mengambil Screenshot...' : 'Bagikan'}
+                      </span>
                     </button>
                   </div>
 
                   {/* Comment Section */}
                   {(expandedComments[post.id] ||
                     (postComments[post.id] && postComments[post.id].length > 0)) && (
-                    <CommentSection post={post} />
-                  )}
+                      <CommentSection post={post} />
+                    )}
                 </div>
               ))}
             </div>
@@ -452,11 +515,10 @@ const NetworkPanel = ({
             <div
               key={user.id}
               onClick={() => handleUserSelect(user)}
-              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${
-                selectedUser?.id === user.id
-                  ? 'bg-blue-50 border-blue-200'
-                  : 'hover:bg-gray-50'
-              }`}
+              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${selectedUser?.id === user.id
+                ? 'bg-blue-50 border-blue-200'
+                : 'hover:bg-gray-50'
+                }`}
             >
               <div className="contact-info flex items-center space-x-3">
                 <div className="contact-avatar-container relative">
@@ -530,11 +592,10 @@ const NetworkPanel = ({
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim()}
-                  className={`send-button p-3 rounded-lg transition-colors ${
-                    newMessage.trim()
-                      ? 'bg-blue-500 text-white hover:bg-blue-600'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  }`}
+                  className={`send-button p-3 rounded-lg transition-colors ${newMessage.trim()
+                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
                 >
                   <Send className="send-icon w-5 h-5" />
                 </button>
