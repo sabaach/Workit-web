@@ -61,6 +61,7 @@ const FreelancerManager = () => {
 
   // Fungsi untuk load comments untuk sebuah post
   // PERBAIKI: wrap loadComments dengan useCallback
+  // PERBAIKI: loadComments dengan useCallback yang benar
   const loadComments = useCallback(async (postId) => {
     if (!currentUser) return;
 
@@ -95,7 +96,7 @@ const FreelancerManager = () => {
     } catch (err) {
       console.error('Error loading comments:', err);
     }
-  }, [currentUser]); // Tambahkan dependencies
+  }, [currentUser]);
 
   // Fungsi untuk add comment
   const addComment = async (postId, content) => {
@@ -227,7 +228,7 @@ const FreelancerManager = () => {
   const handleShareToInstagram = async (post, postElement) => {
     try {
       console.log('🔄 Sharing to Instagram Story:', post.id);
-      
+
       // Update share count di database
       const { error: updateError } = await supabase
         .from('global_posts')
@@ -235,41 +236,41 @@ const FreelancerManager = () => {
           shares: (post.shares || 0) + 1
         })
         .eq('id', post.id);
-  
+
       if (updateError) throw updateError;
-  
+
       // Update UI immediately - optimistic update
       setGlobalPosts(prev =>
         prev.map(p =>
           p.id === post.id
             ? {
-                ...p,
-                shares: (p.shares || 0) + 1
-              }
+              ...p,
+              shares: (p.shares || 0) + 1
+            }
             : p
         )
       );
-  
+
       // Trigger Instagram Story sharing dengan screenshot
       await InstagramService.sharePostToInstagramStory(postElement, post);
-      
+
       console.log('✅ Successfully shared to Instagram Story');
-      
+
     } catch (err) {
       console.error('❌ Error sharing to Instagram Story:', err);
-      
+
       // Rollback share count jika ada error
       setGlobalPosts(prev =>
         prev.map(p =>
           p.id === post.id
             ? {
-                ...p,
-                shares: Math.max((p.shares || 0) - 1, 0)
-              }
+              ...p,
+              shares: Math.max((p.shares || 0) - 1, 0)
+            }
             : p
         )
       );
-      
+
       alert('Gagal membagikan ke Instagram Story: ' + err.message);
     }
   };

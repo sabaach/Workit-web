@@ -1,6 +1,130 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { MessageCircle, Send, Search, MoreVertical, Video, Home, MessageSquare, Share, Heart } from 'lucide-react';
 
+// Komponen CommentSection yang terpisah dan di-memo
+const CommentSection = React.memo(({ 
+  post, 
+  currentUser, 
+  postComments, 
+  expandedComments, 
+  commentInputs, 
+  submittingComment,
+  onCommentInputChange,
+  onCommentSubmit,
+  onToggleComments 
+}) => {
+  const comments = postComments[post.id] || [];
+  const isExpanded = expandedComments[post.id];
+  const currentComment = commentInputs[post.id] || '';
+  const isSubmitting = submittingComment === post.id;
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      onCommentSubmit(post.id);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    onCommentInputChange(post.id, e.target.value);
+  };
+
+  const handleSubmit = () => {
+    onCommentSubmit(post.id);
+  };
+
+  return (
+    <div className="comment-section mt-4 border-t border-gray-200 pt-4">
+      {/* Comment Input */}
+      <div className="comment-input-container flex items-center space-x-3 mb-4">
+        <div className="user-avatar small w-8 h-8 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+          {currentUser?.username?.charAt(0).toUpperCase()}
+        </div>
+        <input
+          type="text"
+          placeholder="Tulis komentar..."
+          value={currentComment}
+          onChange={handleInputChange}
+          onKeyPress={handleKeyPress}
+          disabled={isSubmitting}
+          className="comment-input flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+        />
+        <button
+          onClick={handleSubmit}
+          disabled={!currentComment.trim() || isSubmitting}
+          className={`comment-submit px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+            currentComment.trim() && !isSubmitting
+              ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          {isSubmitting ? 'Mengirim...' : 'Kirim'}
+        </button>
+      </div>
+
+      {/* Comments List */}
+      {isExpanded && (
+        <div className="comments-list space-y-3 max-h-60 overflow-y-auto">
+          {comments.length > 0 ? (
+            comments.map(comment => (
+              <div key={comment.id} className="comment-item flex space-x-3">
+                <div className="user-avatar small w-8 h-8 bg-gradient-to-r from-green-400 to-green-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                  {comment.user.avatar}
+                </div>
+                <div className="comment-content flex-1">
+                  <div className="comment-bubble bg-gray-100 rounded-2xl px-4 py-2">
+                    <div className="comment-header flex items-center space-x-2 mb-1">
+                      <span className="comment-author font-semibold text-sm text-gray-900">
+                        {comment.user.name}
+                      </span>
+                      <span className="comment-time text-xs text-gray-500">
+                        {comment.timestamp}
+                      </span>
+                    </div>
+                    <p className="comment-text text-sm text-gray-800">
+                      {comment.content}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-gray-500 text-sm py-4">
+              Belum ada komentar. Jadilah yang pertama berkomentar!
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+const MessageBubble = ({ message, currentUser }) => {
+  const isOwnMessage = message.sender_id === currentUser.id;
+
+  return (
+    <div
+      className={`message-bubble max-w-xs lg:max-w-md ${
+        isOwnMessage
+          ? 'ml-auto bg-blue-500 text-white rounded-br-none'
+          : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
+      } rounded-2xl px-4 py-3 transition-colors`}
+    >
+      <div className="message-content text-sm">{message.content}</div>
+      <div
+        className={`message-time text-xs mt-2 ${
+          isOwnMessage ? 'text-blue-200' : 'text-gray-500'
+        }`}
+      >
+        {new Date(message.created_at).toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit'
+        })}
+      </div>
+    </div>
+  );
+};
+
 const NetworkPanel = ({
   currentUser,
   users,
@@ -97,15 +221,13 @@ const NetworkPanel = ({
     setSubmittingComment(postId);
 
     try {
-      const success = await addComment(postId, commentText);
-
-      if (success !== false) {
-        // Clear input setelah berhasil
-        setCommentInputs(prev => ({
-          ...prev,
-          [postId]: ''
-        }));
-      }
+      await addComment(postId, commentText);
+      
+      // Clear input setelah berhasil
+      setCommentInputs(prev => ({
+        ...prev,
+        [postId]: ''
+      }));
     } catch (error) {
       console.error('Error submitting comment:', error);
     } finally {
@@ -186,109 +308,6 @@ const NetworkPanel = ({
     if (e.key === 'Enter') {
       addGlobalPost();
     }
-  };
-
-  // Komponen Comment Section - PERBAIKI dengan React.memo
-  const CommentSection = React.memo(({ post }) => {
-    const comments = postComments[post.id] || [];
-    const isExpanded = expandedComments[post.id];
-    const currentComment = commentInputs[post.id] || '';
-    const isSubmitting = submittingComment === post.id;
-
-    const handleKeyPress = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleCommentSubmit(post.id);
-      }
-    };
-
-    return (
-      <div className="comment-section mt-4 border-t border-gray-200 pt-4">
-        {/* Comment Input */}
-        <div className="comment-input-container flex items-center space-x-3 mb-4">
-          <div className="user-avatar small w-8 h-8 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-            {currentUser?.username?.charAt(0).toUpperCase()}
-          </div>
-          <input
-            type="text"
-            placeholder="Tulis komentar..."
-            value={currentComment}
-            onChange={(e) => handleCommentInputChange(post.id, e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isSubmitting}
-            className="comment-input flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
-          />
-          <button
-            onClick={() => handleCommentSubmit(post.id)}
-            disabled={!currentComment.trim() || isSubmitting}
-            className={`comment-submit px-4 py-2 rounded-full text-sm font-medium transition-colors ${currentComment.trim() && !isSubmitting
-              ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-          >
-            {isSubmitting ? 'Mengirim...' : 'Kirim'}
-          </button>
-        </div>
-
-        {/* Comments List */}
-        {isExpanded && (
-          <div className="comments-list space-y-3 max-h-60 overflow-y-auto">
-            {comments.length > 0 ? (
-              comments.map(comment => (
-                <div key={comment.id} className="comment-item flex space-x-3">
-                  <div className="user-avatar small w-8 h-8 bg-gradient-to-r from-green-400 to-green-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-                    {comment.user.avatar}
-                  </div>
-                  <div className="comment-content flex-1">
-                    <div className="comment-bubble bg-gray-100 rounded-2xl px-4 py-2">
-                      <div className="comment-header flex items-center space-x-2 mb-1">
-                        <span className="comment-author font-semibold text-sm text-gray-900">
-                          {comment.user.name}
-                        </span>
-                        <span className="comment-time text-xs text-gray-500">
-                          {comment.timestamp}
-                        </span>
-                      </div>
-                      <p className="comment-text text-sm text-gray-800">
-                        {comment.content}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-center text-gray-500 text-sm py-4">
-                Belum ada komentar. Jadilah yang pertama berkomentar!
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  });
-
-  const MessageBubble = ({ message, currentUser }) => {
-    const isOwnMessage = message.sender_id === currentUser.id;
-
-    return (
-      <div
-        className={`message-bubble max-w-xs lg:max-w-md ${isOwnMessage
-          ? 'ml-auto bg-blue-500 text-white rounded-br-none'
-          : 'mr-auto bg-white text-gray-900 rounded-bl-none shadow-sm'
-          } rounded-2xl px-4 py-3 transition-colors`}
-      >
-        <div className="message-content text-sm">{message.content}</div>
-        <div
-          className={`message-time text-xs mt-2 ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'
-            }`}
-        >
-          {new Date(message.created_at).toLocaleTimeString('id-ID', {
-            hour: '2-digit',
-            minute: '2-digit'
-          })}
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -406,19 +425,22 @@ const NetworkPanel = ({
                     <button
                       onClick={(e) => handleLikeClick(post.id, e)}
                       disabled={likingPostId === post.id}
-                      className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${likingPostId === post.id
-                        ? 'opacity-50 cursor-not-allowed'
-                        : 'hover:bg-gray-100'
-                        } ${isPostLiked(post.id)
+                      className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${
+                        likingPostId === post.id
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:bg-gray-100'
+                      } ${
+                        isPostLiked(post.id)
                           ? 'text-red-600 hover:text-red-700'
                           : 'text-gray-600 hover:text-blue-600'
-                        }`}
+                      }`}
                     >
                       <Heart
-                        className={`action-icon w-5 h-5 ${isPostLiked(post.id)
-                          ? 'fill-red-500 text-red-500'
-                          : 'text-gray-600'
-                          } ${likingPostId === post.id ? 'animate-pulse' : ''}`}
+                        className={`action-icon w-5 h-5 ${
+                          isPostLiked(post.id)
+                            ? 'fill-red-500 text-red-500'
+                            : 'text-gray-600'
+                        } ${likingPostId === post.id ? 'animate-pulse' : ''}`}
                       />
                       <span className="text-sm">
                         {likingPostId === post.id
@@ -440,13 +462,15 @@ const NetworkPanel = ({
                     <button
                       onClick={(e) => handleShareClick(post, e)}
                       disabled={sharingPostId === post.id}
-                      className={`post-action share flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${sharingPostId === post.id
-                        ? 'opacity-50 cursor-not-allowed'
-                        : 'text-gray-600 hover:text-green-600 hover:bg-gray-100'
-                        }`}
+                      className={`post-action share flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${
+                        sharingPostId === post.id
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-green-600 hover:bg-gray-100'
+                      }`}
                     >
-                      <Share className={`action-icon w-5 h-5 ${sharingPostId === post.id ? 'animate-pulse' : ''
-                        }`} />
+                      <Share className={`action-icon w-5 h-5 ${
+                        sharingPostId === post.id ? 'animate-pulse' : ''
+                      }`} />
                       <span className="text-sm">
                         {sharingPostId === post.id ? 'Mengambil Screenshot...' : 'Bagikan'}
                       </span>
@@ -456,8 +480,18 @@ const NetworkPanel = ({
                   {/* Comment Section */}
                   {(expandedComments[post.id] ||
                     (postComments[post.id] && postComments[post.id].length > 0)) && (
-                      <CommentSection post={post} />
-                    )}
+                    <CommentSection 
+                      post={post}
+                      currentUser={currentUser}
+                      postComments={postComments}
+                      expandedComments={expandedComments}
+                      commentInputs={commentInputs}
+                      submittingComment={submittingComment}
+                      onCommentInputChange={handleCommentInputChange}
+                      onCommentSubmit={handleCommentSubmit}
+                      onToggleComments={toggleComments}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -515,10 +549,11 @@ const NetworkPanel = ({
             <div
               key={user.id}
               onClick={() => handleUserSelect(user)}
-              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${selectedUser?.id === user.id
-                ? 'bg-blue-50 border-blue-200'
-                : 'hover:bg-gray-50'
-                }`}
+              className={`contact-item p-3 border-b border-gray-100 cursor-pointer transition-colors ${
+                selectedUser?.id === user.id
+                  ? 'bg-blue-50 border-blue-200'
+                  : 'hover:bg-gray-50'
+              }`}
             >
               <div className="contact-info flex items-center space-x-3">
                 <div className="contact-avatar-container relative">
@@ -592,10 +627,11 @@ const NetworkPanel = ({
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim()}
-                  className={`send-button p-3 rounded-lg transition-colors ${newMessage.trim()
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
+                  className={`send-button p-3 rounded-lg transition-colors ${
+                    newMessage.trim()
+                      ? 'bg-blue-500 text-white hover:bg-blue-600'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
                 >
                   <Send className="send-icon w-5 h-5" />
                 </button>
