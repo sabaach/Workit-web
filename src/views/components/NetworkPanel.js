@@ -416,7 +416,7 @@ const NetworkPanel = ({
                     </p>
                   </div>
 
-                  <div className="post-stats mb-4">
+                  {/* <div className="post-stats mb-4">
                     <div className="stats-info flex space-x-4 text-gray-500 text-sm">
                       <span className="stat-item">
                         <span className="font-semibold">{post.likes}</span> suka
@@ -424,10 +424,10 @@ const NetworkPanel = ({
                       <span className="stat-item">{post.comments} komentar</span>
                       <span className="stat-item">{post.shares} bagikan</span>
                     </div>
-                  </div>
+                  </div> */}
 
                   <div className="post-actions flex border-t border-gray-200 pt-4">
-                    <button
+                    {/* <button
                       onClick={(e) => handleLikeClick(post.id, e)}
                       disabled={likingPostId === post.id}
                       className={`post-action like flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors ${likingPostId === post.id
@@ -451,7 +451,7 @@ const NetworkPanel = ({
                             ? 'Disukai'
                             : 'Suka'}
                       </span>
-                    </button>
+                    </button> */}
 
                     <button
                       onClick={() => toggleComments(post.id)}
