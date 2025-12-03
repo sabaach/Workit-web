@@ -49,15 +49,40 @@ class UserModel {
     }
   }
 
+  static async getOnlineStatuses(currentUserId) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, username, is_online, last_seen')
+      .neq('id', currentUserId);
+
+    if (error) throw error;
+
+    // Filter user yang benar-benar online (dalam 2 menit terakhir)
+    const onlineUsers = data.filter(user => {
+      if (!user.is_online) return false;
+
+      const lastSeen = new Date(user.last_seen);
+      const now = new Date();
+      const diffMinutes = (now - lastSeen) / (1000 * 60);
+
+      return diffMinutes < 2; // Online jika last_seen < 2 menit yang lalu
+    });
+
+    return {
+      allUsers: data || [],
+      onlineUsers: onlineUsers.map(user => user.id)
+    };
+  }
+
   static async updateOnlineStatus(userId, isOnline) {
     const { error } = await supabase
       .from('users')
       .update({
         is_online: isOnline,
-        last_seen: new Date().toISOString()
+        last_seen: new Date().toISOString() 
       })
       .eq('id', userId);
-
+  
     if (error) throw error;
   }
 

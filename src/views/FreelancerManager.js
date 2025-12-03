@@ -290,7 +290,9 @@ const FreelancerManager = () => {
     if (!currentUser) return;
     try {
       const usersData = await UserModel.getAllUsers(currentUser.id);
+      // HAPUS perhitungan online status di sini
       setUsers(usersData);
+      console.log('✅ Loaded users:', usersData);
     } catch (error) {
       console.error('Error loading users:', error);
     }
@@ -512,6 +514,7 @@ const FreelancerManager = () => {
     let unsubscribeLikes;
     let unsubscribePostUpdates;
     let unsubscribeComments;
+    let unsubscribeOnlinePresence;
 
     if (currentUser) {
       // Setup real-time messaging
@@ -652,11 +655,82 @@ const FreelancerManager = () => {
           console.log('📡 Comments subscription status:', status);
         });
 
-      // Setup online presence
-      MessageController.setupOnlinePresence(
-        currentUser,
-        (onlineUserIds) => setOnlineUsers(onlineUserIds)
-      );
+      // ========== SETUP ONLINE STATUS DENGAN PRESENCE ==========
+      console.log('🚀 Setting up Presence for user:', currentUser.id);
+
+      // Setup Presence dengan Supabase Realtime
+      const presenceChannel = supabase.channel('online-users', {
+        config: {
+          presence: {
+            key: currentUser.id
+          }
+        }
+      });
+
+      // Subscribe to presence changes
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          console.log('🔄 Online users synced');
+          const state = presenceChannel.presenceState();
+          console.log('📊 Presence state:', state);
+
+          // Ambil semua user yang online (selain current user)
+          const onlineUserIds = new Set();
+
+          Object.keys(state).forEach(key => {
+            // key adalah user_id dari user yang online
+            const userId = key;
+            if (userId !== currentUser.id) {
+              onlineUserIds.add(userId);
+            }
+          });
+
+          console.log('✅ Online users:', Array.from(onlineUserIds));
+          setOnlineUsers(onlineUserIds);
+        })
+        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+          console.log('🟢 User joined:', key);
+          const userId = key;
+          if (userId !== currentUser.id) {
+            setOnlineUsers(prev => {
+              const newSet = new Set(prev);
+              newSet.add(userId);
+              return newSet;
+            });
+          }
+        })
+        .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+          console.log('🔴 User left:', key);
+          const userId = key;
+          if (userId !== currentUser.id) {
+            setOnlineUsers(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(userId);
+              return newSet;
+            });
+          }
+        })
+        .subscribe(async (status) => {
+          console.log('📡 Presence subscription status:', status);
+
+          if (status === 'SUBSCRIBED') {
+            // Track current user as online
+            await presenceChannel.track({
+              user_id: currentUser.id,
+              username: currentUser.username,
+              online_at: new Date().toISOString(),
+              last_seen: new Date().toISOString()
+            });
+          }
+        });
+
+      // Setup untuk unsubscribe
+      unsubscribeOnlinePresence = () => {
+        console.log('🧹 Cleaning up presence channel');
+        if (presenceChannel) {
+          presenceChannel.unsubscribe();
+        }
+      };
     }
 
     return () => {
@@ -665,6 +739,7 @@ const FreelancerManager = () => {
       if (unsubscribeLikes) unsubscribeLikes();
       if (unsubscribePostUpdates) unsubscribePostUpdates();
       if (unsubscribeComments) unsubscribeComments();
+      if (unsubscribeOnlinePresence) unsubscribeOnlinePresence();
     };
   }, [currentUser, selectedUser, scrollToBottom, loadComments, loadUserLikes]); // Tambahkan dependencies yang diperlukan
 
@@ -690,65 +765,54 @@ const FreelancerManager = () => {
     if (!currentUser) return;
 
     let isMounted = true;
+    let heartbeatInterval;
 
-    const heartbeat = async () => {
+    const updateOnlineStatus = async (isOnline) => {
       if (!isMounted) return;
 
       try {
+        const updateData = {
+          is_online: isOnline,
+          last_seen: new Date().toISOString()
+        };
+
         const { error } = await supabase
           .from('users')
-          .update({
-            last_seen: new Date().toISOString(),
-            is_online: true
-          })
+          .update(updateData)
           .eq('id', currentUser.id);
 
         if (error) {
-          console.error('❌ Heartbeat update error:', error);
+          console.error('❌ Database status update error:', error);
+        } else {
+          console.log(`✅ Database ${isOnline ? 'online' : 'offline'} status updated`);
         }
       } catch (err) {
-        console.error('❌ Heartbeat failed:', err);
+        console.error('❌ Database update failed:', err);
       }
     };
 
-    // Jalankan heartbeat segera
-    heartbeat();
+    // Update lebih jarang (setiap 60 detik) untuk database
+    heartbeatInterval = setInterval(() => {
+      if (isMounted) {
+        updateOnlineStatus(true);
+      }
+    }, 60000); // Setiap 60 detik
 
-    // Setup interval
-    heartbeatIntervalRef.current = setInterval(heartbeat, 15000);
+    // Set online status saat mount
+    updateOnlineStatus(true);
 
     // Cleanup function
     return () => {
       isMounted = false;
 
-      // Clear interval
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
       }
 
-      // Set offline status ketika unmount - DIPERBAIKI
+      // Set offline status ketika unmount
       if (currentUser) {
-        console.log('🚪 Setting user offline on unmount:', currentUser.username);
-
-        // Gunakan then/catch untuk handle promise
-        supabase
-          .from('users')
-          .update({
-            is_online: false,
-            last_seen: new Date().toISOString()
-          })
-          .eq('id', currentUser.id)
-          .then(({ error }) => {
-            if (error) {
-              console.error('❌ Error setting offline status:', error);
-            } else {
-              console.log('✅ User set to offline successfully');
-            }
-          })
-          .catch(err => {
-            console.error('❌ Error in offline status update:', err);
-          });
+        console.log('🚪 Setting database offline on unmount');
+        updateOnlineStatus(false);
       }
     };
   }, [currentUser]);
